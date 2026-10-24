@@ -9,6 +9,17 @@ npm install
 npm start
 ```
 
+## Build packages
+
+```sh
+npm run dist            # both .deb and AppImage
+npm run dist:deb        # .deb only
+npm run dist:appimage   # AppImage only
+```
+
+Packages are written to `dist/`. Install the .deb with `sudo apt install ./dist/splitbeam-<version>-amd64.deb`;
+the AppImage runs directly after `chmod +x` (it needs `libfuse2`). The app icon source is `build/icon.svg`.
+
 ## Keys
 
 | Key | Action |
