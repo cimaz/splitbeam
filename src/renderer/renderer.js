@@ -21,6 +21,7 @@ let activePane = null;
 let dragSource = null;
 let favorites = [];
 let connections = []; // saved SFTP servers (no secrets)
+let skippedUpdate = null; // version the user chose to skip
 const onlineKeys = new Set(); // user@host:port of live SFTP sessions
 const panes = {};
 
@@ -79,6 +80,7 @@ function saveState() {
         showHidden,
         favorites,
         connections,
+        skippedUpdate,
         active: activePane && activePane.side,
         left: { path: panes.left.path, sort: panes.left.sort },
         right: { path: panes.right.path, sort: panes.right.sort },
@@ -1492,6 +1494,39 @@ window.addEventListener('focus', () => {
   for (const pane of Object.values(panes)) pane.refresh();
 });
 
+// ---------- update notification ----------
+
+const UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
+const updateBar = document.querySelector('.update-bar');
+let updateInfo = null;
+
+async function checkForUpdate() {
+  const info = await api.checkForUpdate();
+  if (!info || !info.newer || info.latest === skippedUpdate) return;
+  updateInfo = info;
+  updateBar.querySelector('.update-text').textContent =
+    `SplitBeam ${info.latest} is available \u2014 you have ${info.current}.`;
+  updateBar.querySelector('.update-download').title = info.assetName ? `Download ${info.assetName}` : 'Open the download page';
+  updateBar.hidden = false;
+}
+
+function openUpdateLink(url) {
+  api.openUpdateLink(url).catch((err) => alertError(cleanError(err)));
+}
+
+updateBar.querySelector('.update-download').addEventListener('click', () => openUpdateLink(updateInfo.downloadUrl));
+updateBar.querySelector('.update-notes').addEventListener('click', () => openUpdateLink(updateInfo.pageUrl));
+updateBar.querySelector('.update-skip').addEventListener('click', () => {
+  skippedUpdate = updateInfo.latest;
+  updateBar.hidden = true;
+  saveState();
+});
+updateBar.querySelector('.update-close').addEventListener('click', () => {
+  updateBar.hidden = true;
+  clearInterval(updateTimer); // hidden until next start
+});
+let updateTimer = null;
+
 // ---------- init ----------
 
 (async function init() {
@@ -1502,6 +1537,7 @@ window.addEventListener('focus', () => {
   showHidden = !!state.showHidden;
   favorites = Array.isArray(state.favorites) ? state.favorites : await api.defaultFavorites();
   connections = Array.isArray(state.connections) ? state.connections : [];
+  skippedUpdate = state.skippedUpdate || null;
   for (const key of await api.sftpConnected()) onlineKeys.add(key);
   api.onSftpStatus(({ key, connected }) => {
     if (connected) onlineKeys.add(key);
@@ -1525,4 +1561,7 @@ window.addEventListener('focus', () => {
   );
 
   setActive(panes[state.active] || panes.left);
+
+  setTimeout(checkForUpdate, 3000);
+  updateTimer = setInterval(checkForUpdate, UPDATE_INTERVAL);
 })();

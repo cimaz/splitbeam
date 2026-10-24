@@ -713,3 +713,51 @@ dialog::backdrop {
 .conn-dialog .dlg-buttons .primary {
   order: 1;
 }
+
+/* Update notification */
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 6px 0;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--cursor);
+  flex-wrap: wrap;
+}
+
+.update-bar[hidden] {
+  display: none;
+}
+
+.update-text {
+  flex: 1;
+  min-width: 200px;
+}
+
+.update-bar button {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--pane);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.update-bar button:hover {
+  border-color: var(--accent);
+}
+
+.update-bar button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.update-bar .update-close {
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}

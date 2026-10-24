@@ -37,6 +37,9 @@ The version shows in the window title and with `splitbeam --version`.
    This bumps the version in package.json, moves the Unreleased entries into a dated section,
    commits as "Release vX.Y.Z" and tags `vX.Y.Z`. It stops if Unreleased is empty.
 3. Push with `git push --follow-tags`, then build the packages with `npm run dist`.
+4. Publish a GitHub release for the tag with the .deb and AppImage attached. Running copies of SplitBeam
+   check `https://api.github.com/repos/cimaz/splitbeam/releases/latest` at startup and every 6 hours and
+   offer the update; that request is the only network traffic SplitBeam makes besides your SFTP servers.
 
 ## Keys
 

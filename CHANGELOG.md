@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Update notification: SplitBeam checks GitHub for a newer release at startup and every 6 hours and
+  shows a bar with Download (the .deb or AppImage matching your install), Release notes and
+  Skip this version.
+
 ## [0.2.0] - 2026-10-24
 
 ### Added

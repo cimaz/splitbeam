@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, dialog, net } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const os = require('os');
@@ -273,6 +273,60 @@ async function transfer(src, destDir, isMove) {
   if (isMove) await removeAny(src);
 }
 
+// ---------- update check ----------
+
+// "owner/repo" from the homepage in package.json, e.g. https://github.com/cimaz/splitbeam
+const GITHUB_REPO = require('../package.json').homepage.replace(/^https:\/\/github\.com\//, '').replace(/\/$/, '');
+
+/** Compares "1.2.3" style versions (an optional leading "v" and "-prerelease" suffix are handled). */
+function compareVersions(a, b) {
+  const parse = (v) => {
+    const [main, pre] = v.replace(/^v/, '').split('-', 2);
+    return { nums: main.split('.').map((n) => parseInt(n, 10) || 0), pre: pre || '' };
+  };
+  const x = parse(a);
+  const y = parse(b);
+  for (let i = 0; i < Math.max(x.nums.length, y.nums.length); i++) {
+    const d = (x.nums[i] || 0) - (y.nums[i] || 0);
+    if (d) return Math.sign(d);
+  }
+  if (x.pre === y.pre) return 0;
+  if (!x.pre) return 1; // 1.0.0 is newer than 1.0.0-beta
+  if (!y.pre) return -1;
+  return x.pre < y.pre ? -1 : 1;
+}
+
+/** The download that fits how this copy was installed: the AppImage, the .deb, or none (release page). */
+function pickAsset(assets) {
+  if (process.env.APPIMAGE) return assets.find((a) => a.name.endsWith('.AppImage'));
+  if (app.isPackaged && process.platform === 'linux') return assets.find((a) => a.name.endsWith('.deb'));
+  return null;
+}
+
+/** Asks GitHub for the latest published release. Resolves to null when offline or nothing is published. */
+async function checkForUpdate() {
+  try {
+    const res = await net.fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': `SplitBeam/${app.getVersion()}` },
+    });
+    if (!res.ok) return null; // 404 until the first release is published
+    const release = await res.json();
+    const latest = String(release.tag_name || '').replace(/^v/, '');
+    if (!latest) return null;
+    const asset = pickAsset(release.assets || []);
+    return {
+      current: app.getVersion(),
+      latest,
+      newer: compareVersions(latest, app.getVersion()) > 0,
+      pageUrl: release.html_url,
+      downloadUrl: asset ? asset.browser_download_url : release.html_url,
+      assetName: asset ? asset.name : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function registerSftpIpc() {
   ipcMain.handle('sftp:connect', (_e, profile, secret) => remote.connect(profile, secret));
   ipcMain.handle('sftp:disconnect', (_e, key) => remote.disconnect(key));
@@ -289,6 +343,12 @@ function registerIpc() {
     return listDir(path.resolve(dir));
   });
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('update:check', () => checkForUpdate());
+  ipcMain.handle('update:open', (_e, url) => {
+    // Only ever open this project's GitHub pages from the update bar
+    if (!url.startsWith(`https://github.com/${GITHUB_REPO}/`)) throw new Error('Refusing to open an unexpected URL');
+    return shell.openExternal(url);
+  });
   ipcMain.handle('fs:home', () => os.homedir());
   ipcMain.handle('fs:defaultFavorites', async () => {
     const candidates = [
