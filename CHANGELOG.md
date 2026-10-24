@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Windows version: installer (choose the install folder) and portable .exe. Other drives appear in
+  Favorites on first start, and SSH agent sign-in uses the Windows OpenSSH agent.
+- Release workflow on GitHub Actions: pushing a version tag builds the Linux and Windows packages and
+  publishes the GitHub release with the changelog notes.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added

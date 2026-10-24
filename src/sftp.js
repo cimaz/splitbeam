@@ -136,7 +136,9 @@ async function openClient(profile, secret) {
       config.privateKey = keyData;
     }
   } else {
-    config.agent = process.env.SSH_AUTH_SOCK;
+    // Windows has no SSH_AUTH_SOCK; its built-in OpenSSH agent listens on a named pipe
+    config.agent =
+      process.env.SSH_AUTH_SOCK || (process.platform === 'win32' ? '\\\\.\\pipe\\openssh-ssh-agent' : undefined);
     if (!config.agent) throw new Error('No SSH agent is running (SSH_AUTH_SOCK is not set)');
   }
 

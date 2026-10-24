@@ -299,7 +299,13 @@ function compareVersions(a, b) {
 /** The download that fits how this copy was installed: the AppImage, the .deb, or none (release page). */
 function pickAsset(assets) {
   if (process.env.APPIMAGE) return assets.find((a) => a.name.endsWith('.AppImage'));
-  if (app.isPackaged && process.platform === 'linux') return assets.find((a) => a.name.endsWith('.deb'));
+  if (!app.isPackaged) return null;
+  if (process.platform === 'linux') return assets.find((a) => a.name.endsWith('.deb'));
+  if (process.platform === 'win32') {
+    // The portable build sets PORTABLE_EXECUTABLE_FILE; otherwise it was installed with the setup
+    const kind = process.env.PORTABLE_EXECUTABLE_FILE ? '-portable-' : '-setup-';
+    return assets.find((a) => a.name.endsWith('.exe') && a.name.includes(kind));
+  }
   return null;
 }
 
@@ -364,6 +370,13 @@ function registerIpc() {
       { name: 'Documents', path: app.getPath('documents') },
       { name: 'Downloads', path: app.getPath('downloads') },
     ];
+    if (process.platform === 'win32') {
+      // Other drives (D:\, E:\, ...) so they are one click away
+      const systemDrive = (process.env.SystemDrive || 'C:').toUpperCase();
+      for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+        if (`${letter}:` !== systemDrive) candidates.push({ name: `${letter}:`, path: `${letter}:\\` });
+      }
+    }
     const present = await Promise.all(candidates.map((c) => exists(c.path)));
     return candidates.filter((_c, i) => present[i]);
   });

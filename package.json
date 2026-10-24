@@ -18,6 +18,7 @@
     "dist": "electron-builder --linux deb AppImage",
     "dist:deb": "electron-builder --linux deb",
     "dist:appimage": "electron-builder --linux AppImage",
+    "dist:win": "electron-builder --win nsis portable --x64",
     "release:patch": "npm version patch",
     "release:minor": "npm version minor",
     "release:major": "npm version major",
@@ -61,6 +62,23 @@
         "--category",
         "utils"
       ]
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${name}-${version}-setup-${arch}.${ext}",
+      "shortcutName": "SplitBeam"
+    },
+    "portable": {
+      "artifactName": "${name}-${version}-portable-${arch}.${ext}"
     }
   },
   "dependencies": {

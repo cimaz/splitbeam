@@ -37,8 +37,10 @@ function isRemotePath(p) {
 }
 
 function basename(p) {
-  const trimmed = p.length > 1 && p.endsWith(sep) ? p.slice(0, -1) : p;
-  return trimmed.slice(trimmed.lastIndexOf(sep) + 1);
+  // SFTP locations always use "/"; Windows paths may use either "\" or "/"
+  const seps = isRemotePath(p) ? ['/'] : sep === '\\' ? ['\\', '/'] : ['/'];
+  const trimmed = p.length > 1 && seps.some((s) => p.endsWith(s)) ? p.slice(0, -1) : p;
+  return trimmed.slice(Math.max(...seps.map((s) => trimmed.lastIndexOf(s))) + 1);
 }
 
 function formatSize(bytes) {

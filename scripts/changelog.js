@@ -4,6 +4,7 @@
 //   node scripts/changelog.js check    fail if [Unreleased] has no entries (preversion hook)
 //   node scripts/changelog.js release  turn [Unreleased] into a section for the new version
 //                                      from package.json and update the compare links (version hook)
+//   node scripts/changelog.js notes X  print the entries for version X (GitHub release notes)
 'use strict';
 
 const fs = require('fs');
@@ -68,7 +69,17 @@ function release() {
   console.log(`changelog: released ${version}`);
 }
 
+function notes(version) {
+  const lines = fs.readFileSync(changelogPath, 'utf8').split('\n');
+  const start = lines.findIndex((l) => l.startsWith(`## [${version}]`));
+  if (start < 0) fail(`no section for ${version} in CHANGELOG.md`);
+  let end = start + 1;
+  while (end < lines.length && !/^## \[/.test(lines[end]) && !/^\[[^\]]+\]: /.test(lines[end])) end++;
+  console.log(lines.slice(start + 1, end).join('\n').trim());
+}
+
 const command = process.argv[2];
 if (command === 'check') check();
 else if (command === 'release') release();
-else fail('usage: changelog.js check|release');
+else if (command === 'notes') notes(String(process.argv[3] || '').replace(/^v/, ''));
+else fail('usage: changelog.js check|release|notes <version>');

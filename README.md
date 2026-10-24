@@ -17,6 +17,9 @@ npm run dist:deb        # .deb only
 npm run dist:appimage   # AppImage only
 ```
 
+`npm run dist:win` builds the Windows installer and portable .exe (on Linux this needs Wine; the release
+workflow below builds them on GitHub's Windows machines instead).
+
 Packages are written to `dist/`. Install the .deb with `sudo apt install ./dist/splitbeam-<version>-amd64.deb`;
 the AppImage runs directly after `chmod +x` (it needs `libfuse2`). The app icon source is `build/icon.svg`.
 
@@ -36,8 +39,11 @@ The version shows in the window title and with `splitbeam --version`.
 
    This bumps the version in package.json, moves the Unreleased entries into a dated section,
    commits as "Release vX.Y.Z" and tags `vX.Y.Z`. It stops if Unreleased is empty.
-3. Push with `git push --follow-tags`, then build the packages with `npm run dist`.
-4. Publish a GitHub release for the tag with the .deb and AppImage attached. Running copies of SplitBeam
+3. Push with `git push --follow-tags`. The tag starts the **Release** workflow on GitHub Actions
+   (`.github/workflows/release.yml`), which builds the .deb, AppImage, Windows installer and portable .exe
+   and publishes a GitHub release with this version's changelog notes. It can also be run by hand from the
+   Actions tab for an existing tag.
+4. Done. If you publish by hand instead, attach the .deb and AppImage built with `npm run dist`. Running copies of SplitBeam
    check `https://api.github.com/repos/cimaz/splitbeam/releases/latest` once at startup and offer the
    update (you can also check any time from the Menu, F1); that request is the only network traffic SplitBeam makes besides your SFTP servers.
 
