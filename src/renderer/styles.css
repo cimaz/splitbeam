@@ -1,0 +1,350 @@
+:root {
+  --bg: #1e1f24;
+  --pane: #24262c;
+  --pane-active: #282a31;
+  --border: #363841;
+  --text: #d9dbe1;
+  --muted: #8a8d98;
+  --accent: #4f8cff;
+  --cursor: #33415e;
+  --cursor-inactive: #30323a;
+  --selected: #f2c94c;
+  --folder: #7fb3ff;
+  --danger: #e5534b;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #e8e9ed;
+    --pane: #f6f7f9;
+    --pane-active: #ffffff;
+    --border: #d3d5dc;
+    --text: #1f2128;
+    --muted: #6b6f7b;
+    --accent: #2f6fe8;
+    --cursor: #d4e2ff;
+    --cursor-inactive: #e6e8ee;
+    --selected: #b7791f;
+    --folder: #2f6fe8;
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Panes */
+.panes {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  padding: 6px;
+  gap: 0;
+}
+
+.divider {
+  width: 6px;
+}
+
+.pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--pane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.pane.active {
+  background: var(--pane-active);
+  border-color: var(--accent);
+}
+
+.pane.drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
+.pathbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pathbar button {
+  width: 28px;
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.pathbar button:hover {
+  border-color: var(--accent);
+}
+
+.path {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.path:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.colhead,
+.row {
+  display: grid;
+  grid-template-columns: 1fr 90px 140px;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.colhead {
+  border-bottom: 1px solid var(--border);
+}
+
+.colhead button {
+  text-align: left;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.colhead button:nth-child(2) {
+  text-align: right;
+}
+
+.colhead button.sorted {
+  color: var(--text);
+}
+
+.colhead button.sorted::after {
+  content: ' \25B4';
+}
+
+.colhead button.sorted.desc::after {
+  content: ' \25BE';
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  outline: none;
+}
+
+.row {
+  height: 24px;
+  align-items: center;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row .name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row .size {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.row .mtime {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.row.dir .name {
+  color: var(--folder);
+  font-weight: 500;
+}
+
+.row.hidden {
+  opacity: 0.6;
+}
+
+.row.link .name span {
+  font-style: italic;
+}
+
+.row.cursor {
+  background: var(--cursor-inactive);
+}
+
+.pane.active .row.cursor {
+  background: var(--cursor);
+}
+
+.row.selected .name,
+.row.selected .size,
+.row.selected .mtime {
+  color: var(--selected);
+  font-weight: 600;
+}
+
+.icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.status {
+  padding: 4px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+/* Function key bar */
+.keybar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 6px 6px;
+}
+
+.keybar button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--pane);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.keybar button:hover {
+  border-color: var(--accent);
+}
+
+kbd {
+  font: 11px ui-monospace, Menlo, Consolas, monospace;
+  color: var(--muted);
+}
+
+/* Dialog */
+dialog {
+  min-width: 380px;
+  max-width: 560px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--pane-active);
+  color: var(--text);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.dlg-message {
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.dlg-input {
+  width: 100%;
+  padding: 6px 8px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.dlg-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dlg-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.dlg-buttons button {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--pane);
+  cursor: pointer;
+}
+
+.dlg-buttons button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.dlg-buttons button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}

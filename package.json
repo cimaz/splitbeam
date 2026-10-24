@@ -1,0 +1,14 @@
+{
+  "name": "splitbeam",
+  "productName": "SplitBeam",
+  "version": "0.1.0",
+  "description": "A dual pane file browser",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}

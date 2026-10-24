@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <title>SplitBeam</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="panes">
+      <section class="pane" id="pane-left"></section>
+      <div class="divider" aria-hidden="true"></div>
+      <section class="pane" id="pane-right"></section>
+    </main>
+
+    <footer class="keybar">
+      <button data-action="rename"><kbd>F2</kbd>Rename</button>
+      <button data-action="open"><kbd>F3</kbd>Open</button>
+      <button data-action="copy"><kbd>F5</kbd>Copy</button>
+      <button data-action="move"><kbd>F6</kbd>Move</button>
+      <button data-action="mkdir"><kbd>F7</kbd>New folder</button>
+      <button data-action="trash"><kbd>F8</kbd>Trash</button>
+      <button data-action="hidden"><kbd>Ctrl+H</kbd>Hidden</button>
+      <button data-action="swap"><kbd>Ctrl+U</kbd>Swap</button>
+      <button data-action="mirror"><kbd>Ctrl+M</kbd>Mirror</button>
+    </footer>
+
+    <template id="pane-template">
+      <div class="pathbar">
+        <button class="up" title="Parent folder (Backspace)">&#8593;</button>
+        <button class="home" title="Home folder (Ctrl+Home)">&#8962;</button>
+        <input class="path" spellcheck="false" />
+      </div>
+      <div class="colhead">
+        <button data-sort="name">Name</button>
+        <button data-sort="size">Size</button>
+        <button data-sort="mtime">Modified</button>
+      </div>
+      <div class="list" tabindex="0"></div>
+      <div class="status"></div>
+    </template>
+
+    <dialog id="dialog">
+      <form method="dialog">
+        <p class="dlg-message"></p>
+        <input class="dlg-input" spellcheck="false" />
+        <menu class="dlg-buttons"></menu>
+      </form>
+    </dialog>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
