@@ -30,10 +30,20 @@ npm start
 | Ctrl+H | Toggle hidden files |
 | Ctrl+U | Swap panes |
 | Ctrl+M | Mirror active pane's folder in the other pane |
+| Ctrl+S | Sync folders (recursive, one way) |
 | Ctrl+L | Edit path (supports `~`) |
 | Ctrl+R | Refresh |
 | Ctrl+Home | Home folder |
+| Ctrl+D | Add current folder to favorites |
 | Type letters | Jump to matching name |
+| Right-click, Menu key, Shift+F10 | Context menu for the item or folder |
+
+The **Favorites** sidebar starts with Home, Desktop, Documents and Downloads. Click one to open it in the
+active pane, use **+** (or Ctrl+D) to add the active pane's current folder, and hover a favorite to remove it with **×**. Drag favorites up or down to reorder them.
+
+**Sync** copies one pane's folder into the other, recursively. Pick the direction (left → right or right → left),
+review the list of changes, then confirm. New and changed files are copied with their timestamps; files that
+exist only in the target are kept unless you tick the option to move them to the trash.
 
 Drag items onto the other pane to copy them; hold Shift while dropping to move.
-Pane locations, sorting and the hidden-files setting are remembered between sessions.
+Favorites, pane locations, sorting and the hidden-files setting are remembered between sessions.

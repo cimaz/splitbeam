@@ -5,6 +5,7 @@ const invoke = (channel) => (...args) => ipcRenderer.invoke(channel, ...args);
 contextBridge.exposeInMainWorld('api', {
   list: invoke('fs:list'),
   home: invoke('fs:home'),
+  defaultFavorites: invoke('fs:defaultFavorites'),
   sep: invoke('fs:sep'),
   join: invoke('fs:join'),
   exists: invoke('fs:exists'),
@@ -16,4 +17,14 @@ contextBridge.exposeInMainWorld('api', {
   trash: invoke('fs:trash'),
   open: invoke('shell:open'),
   reveal: invoke('shell:reveal'),
+  copyText: invoke('clipboard:writeText'),
+  popupMenu: invoke('menu:popup'),
+  syncPlan: invoke('sync:plan'),
+  syncRun: invoke('sync:run'),
+  syncCancel: invoke('sync:cancel'),
+  onSyncProgress: (callback) => {
+    const listener = (_e, progress) => callback(progress);
+    ipcRenderer.on('sync:progress', listener);
+    return () => ipcRenderer.removeListener('sync:progress', listener);
+  },
 });

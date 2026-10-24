@@ -1,6 +1,6 @@
 'use strict';
 
-const api = window.api;
+// `api` is the global exposed by preload.js via contextBridge.
 const STORAGE_KEY = 'splitbeam.state';
 const ROW_HEIGHT = 24;
 
@@ -16,6 +16,7 @@ let homeDir = '/';
 let showHidden = false;
 let activePane = null;
 let dragSource = null;
+let favorites = [];
 const panes = {};
 
 // ---------- helpers ----------
@@ -67,6 +68,7 @@ function saveState() {
       STORAGE_KEY,
       JSON.stringify({
         showHidden,
+        favorites,
         active: activePane && activePane.side,
         left: { path: panes.left.path, sort: panes.left.sort },
         right: { path: panes.right.path, sort: panes.right.sort },
@@ -212,12 +214,28 @@ class Pane {
         this.anchor = i;
       }
       this.cursor = i;
-      this.render();
+      // Update rows in place: replacing them would break dblclick and dragstart,
+      // which need the same element under both clicks.
+      this.updateRows();
     });
 
     this.list.addEventListener('dblclick', (e) => {
       const row = e.target.closest('.row');
       if (row) this.openEntry(this.view[Number(row.dataset.index)]);
+    });
+
+    this.list.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      setActive(this);
+      const row = e.target.closest('.row');
+      const entry = row && this.view[Number(row.dataset.index)];
+      if (!entry || entry.isParent) return showFolderMenu(this);
+      // Right-clicking outside the selection targets just that item, like other file managers
+      if (!this.selected.has(entry.path)) this.selected.clear();
+      this.cursor = Number(row.dataset.index);
+      this.anchor = this.cursor;
+      this.updateRows();
+      showItemMenu(this, entry);
     });
 
     // Drag and drop between panes
@@ -285,6 +303,7 @@ class Pane {
     this.applyView();
     this.focusName(focus ?? (current && current.name));
     this.render();
+    if (this === activePane) renderFavorites();
     saveState();
     return true;
   }
@@ -392,6 +411,17 @@ class Pane {
     this.scrollToCursor();
   }
 
+  /** Refreshes cursor/selection highlighting without rebuilding the rows. */
+  updateRows() {
+    const rows = this.list.children;
+    for (let i = 0; i < rows.length; i++) {
+      rows[i].classList.toggle('cursor', i === this.cursor);
+      rows[i].classList.toggle('selected', this.selected.has(this.view[i].path));
+    }
+    this.scrollToCursor();
+    this.updateStatus();
+  }
+
   pageSize() {
     return Math.max(1, Math.floor(this.list.clientHeight / ROW_HEIGHT) - 1);
   }
@@ -479,7 +509,238 @@ function setActive(pane) {
   activePane = pane;
   pane.el.classList.add('active');
   if (document.activeElement !== pane.pathInput) pane.list.focus();
+  renderFavorites();
   saveState();
+}
+
+// ---------- favorites ----------
+
+const favoritesList = document.querySelector('.favorites');
+
+function renderFavorites() {
+  const frag = document.createDocumentFragment();
+  favorites.forEach((fav, i) => {
+    const li = document.createElement('li');
+    li.dataset.index = i;
+    li.title = fav.path;
+    li.draggable = true;
+    if (activePane && activePane.path === fav.path) li.classList.add('current');
+
+    const name = document.createElement('span');
+    name.className = 'fav-name';
+    name.textContent = fav.name;
+
+    const remove = document.createElement('button');
+    remove.className = 'fav-remove';
+    remove.title = 'Remove from favorites';
+    remove.textContent = '×';
+
+    li.insertAdjacentHTML('afterbegin', ICON_FOLDER);
+    li.append(name, remove);
+    frag.append(li);
+  });
+  favoritesList.replaceChildren(frag);
+}
+
+/** Adds `dir` (default: the pane's current folder) to favorites after asking for a name. */
+async function addFavorite(pane, dir = pane && pane.path) {
+  if (!dir) return;
+  if (favorites.some((f) => f.path === dir)) {
+    pane.setStatus('This folder is already in favorites');
+    return;
+  }
+  const { value, text } = await showDialog({
+    message: `Add to favorites:\n${dir}\n\nName`,
+    input: basename(dir) || dir,
+    buttons: [
+      { label: 'Cancel', value: '' },
+      { label: 'Add', value: 'go', kind: 'primary' },
+    ],
+  });
+  if (!value) return;
+  favorites.push({ name: text || basename(dir) || dir, path: dir });
+  renderFavorites();
+  saveState();
+}
+
+favoritesList.addEventListener('click', (e) => {
+  const li = e.target.closest('li');
+  if (!li) return;
+  const i = Number(li.dataset.index);
+  if (e.target.closest('.fav-remove')) {
+    favorites.splice(i, 1);
+    renderFavorites();
+    saveState();
+  } else if (activePane) {
+    activePane.navigate(favorites[i].path);
+  }
+  // Hand keyboard focus back to the active pane
+  if (activePane) activePane.list.focus();
+});
+
+// Reordering favorites by drag and drop
+let favDragIndex = null;
+
+/** Where a drop at this event's position would insert, as an index into favorites. */
+function favDropTarget(e) {
+  const li = e.target.closest('.favorites li');
+  if (!li) return { index: favorites.length, li: null, after: true };
+  const rect = li.getBoundingClientRect();
+  const after = e.clientY > rect.top + rect.height / 2;
+  return { index: Number(li.dataset.index) + (after ? 1 : 0), li, after };
+}
+
+function clearFavDropMarkers() {
+  for (const el of favoritesList.querySelectorAll('.drop-before, .drop-after')) {
+    el.classList.remove('drop-before', 'drop-after');
+  }
+}
+
+favoritesList.addEventListener('dragstart', (e) => {
+  const li = e.target.closest('li');
+  if (!li) return;
+  favDragIndex = Number(li.dataset.index);
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', favorites[favDragIndex].path);
+  li.classList.add('dragging');
+});
+
+favoritesList.addEventListener('dragover', (e) => {
+  if (favDragIndex === null) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const { li, after } = favDropTarget(e);
+  clearFavDropMarkers();
+  const marker = li || favoritesList.lastElementChild;
+  if (marker) marker.classList.add(after ? 'drop-after' : 'drop-before');
+});
+
+favoritesList.addEventListener('dragleave', (e) => {
+  if (!favoritesList.contains(e.relatedTarget)) clearFavDropMarkers();
+});
+
+favoritesList.addEventListener('drop', (e) => {
+  if (favDragIndex === null) return;
+  e.preventDefault();
+  let { index } = favDropTarget(e);
+  const [moved] = favorites.splice(favDragIndex, 1);
+  if (index > favDragIndex) index--;
+  favorites.splice(index, 0, moved);
+  favDragIndex = null;
+  renderFavorites();
+  saveState();
+});
+
+favoritesList.addEventListener('dragend', () => {
+  favDragIndex = null;
+  clearFavDropMarkers();
+  for (const el of favoritesList.querySelectorAll('.dragging')) el.classList.remove('dragging');
+});
+
+document.querySelector('.fav-add').addEventListener('click', () => addFavorite(activePane));
+
+// ---------- context menus ----------
+
+const SEPARATOR = { type: 'separator' };
+
+async function copyText(pane, text, what) {
+  try {
+    await api.copyText(text);
+    pane.setStatus(`Copied ${what} to clipboard`);
+  } catch (err) {
+    pane.setStatus(cleanError(err), true);
+  }
+}
+
+/** Menu position below the cursor row, for menus opened from the keyboard. */
+function cursorMenuPosition(pane) {
+  const row = pane.list.children[pane.cursor];
+  const r = (row || pane.list).getBoundingClientRect();
+  return { x: r.left + 24, y: row ? r.bottom : r.top };
+}
+
+async function showItemMenu(pane, entry, pos) {
+  const targets = pane.targets();
+  const multi = targets.length > 1;
+  const count = multi ? ` ${targets.length} items` : '';
+  const choice = await api.popupMenu(
+    [
+      { id: 'open', label: entry.isDir ? 'Open' : 'Open with default app', accelerator: 'Enter' },
+      entry.isDir && { id: 'openOther', label: 'Open in other pane' },
+      { id: 'reveal', label: 'Show in system file manager' },
+      SEPARATOR,
+      { id: 'copy', label: `Copy${count} to other pane`, accelerator: 'F5' },
+      { id: 'move', label: `Move${count} to other pane`, accelerator: 'F6' },
+      { id: 'rename', label: 'Rename', accelerator: 'F2', enabled: !multi },
+      { id: 'trash', label: `Move${count} to trash`, accelerator: 'F8' },
+      SEPARATOR,
+      { id: 'copyPath', label: multi ? 'Copy paths' : 'Copy path' },
+      { id: 'copyName', label: multi ? 'Copy names' : 'Copy name' },
+      entry.isDir && {
+        id: 'favorite',
+        label: 'Add to favorites',
+        enabled: !favorites.some((f) => f.path === entry.path),
+      },
+      SEPARATOR,
+      { id: 'mkdir', label: 'New folder', accelerator: 'F7' },
+    ].filter(Boolean),
+    pos
+  );
+
+  switch (choice) {
+    case 'open':
+      return pane.openEntry(entry);
+    case 'openOther':
+      return pane.other.navigate(entry.path);
+    case 'reveal':
+      return api.reveal(entry.path);
+    case 'copyPath':
+      return copyText(pane, targets.join('\n'), multi ? 'paths' : 'path');
+    case 'copyName':
+      return copyText(pane, targets.map(basename).join('\n'), multi ? 'names' : 'name');
+    case 'favorite':
+      return addFavorite(pane, entry.path);
+    case 'copy':
+    case 'move':
+    case 'rename':
+    case 'trash':
+    case 'mkdir':
+      return runAction(choice);
+  }
+}
+
+async function showFolderMenu(pane, pos) {
+  const choice = await api.popupMenu([
+    { id: 'mkdir', label: 'New folder', accelerator: 'F7' },
+    { id: 'refresh', label: 'Refresh', accelerator: 'CmdOrCtrl+R' },
+    { id: 'hidden', label: showHidden ? 'Hide hidden files' : 'Show hidden files', accelerator: 'CmdOrCtrl+H' },
+    SEPARATOR,
+    { id: 'mirror', label: 'Open this folder in other pane', accelerator: 'CmdOrCtrl+M' },
+    { id: 'openExternal', label: 'Open in system file manager' },
+    SEPARATOR,
+    { id: 'copyPath', label: 'Copy folder path' },
+    {
+      id: 'favorite',
+      label: 'Add folder to favorites',
+      accelerator: 'CmdOrCtrl+D',
+      enabled: !favorites.some((f) => f.path === pane.path),
+    },
+  ], pos);
+
+  switch (choice) {
+    case 'refresh':
+      return pane.refresh();
+    case 'openExternal':
+      return api.open(pane.path).catch((err) => pane.setStatus(cleanError(err), true));
+    case 'copyPath':
+      return copyText(pane, pane.path, 'folder path');
+    case 'favorite':
+      return addFavorite(pane);
+    case 'mkdir':
+    case 'hidden':
+    case 'mirror':
+      return runAction(choice);
+  }
 }
 
 async function transfer(kind, srcPane, paths, destDir) {
@@ -630,18 +891,199 @@ function runAction(action) {
       return swapPanes();
     case 'mirror':
       return pane.other.navigate(pane.path);
+    case 'sync':
+      return openSync();
   }
 }
+
+// ---------- sync ----------
+
+const syncEl = document.getElementById('sync-dialog');
+const syncSummary = syncEl.querySelector('.sync-summary');
+const syncPlanList = syncEl.querySelector('.sync-plan');
+const syncDelete = syncEl.querySelector('.sync-delete');
+const syncProgress = syncEl.querySelector('.sync-progress');
+const syncProgressBar = syncProgress.querySelector('progress');
+const syncCurrent = syncEl.querySelector('.sync-current');
+const syncRunBtn = syncEl.querySelector('.sync-run');
+const syncCancelBtn = syncEl.querySelector('.sync-cancel');
+const syncRadios = syncEl.querySelectorAll('input[name="sync-direction"]');
+const SYNC_LIST_LIMIT = 500;
+const SYNC_LABELS = { new: 'new', update: 'update', replace: 'replace', delete: 'trash' };
+
+let syncPlanId = null;
+let syncToken = 0;
+let syncRunning = false;
+
+/** The selected direction: the radio value names the source pane. */
+function syncDirection() {
+  const from = [...syncRadios].find((r) => r.checked).value;
+  const source = panes[from];
+  return { source: source.path, target: source.other.path };
+}
+
+function openSync() {
+  for (const side of ['left', 'right']) {
+    const p = panes[side];
+    syncEl.querySelector(`[data-paths="${side}"]`).textContent = `${p.path}  →  ${p.other.path}`;
+  }
+  for (const r of syncRadios) r.checked = r.value === activePane.side;
+  syncDelete.checked = false;
+  syncProgress.hidden = true;
+  syncRunBtn.hidden = false;
+  syncCancelBtn.textContent = 'Cancel';
+  setSyncInputsDisabled(false);
+  syncEl.showModal();
+  compareSync();
+}
+
+function setSyncInputsDisabled(disabled) {
+  for (const r of syncRadios) r.disabled = disabled;
+  syncDelete.disabled = disabled;
+}
+
+function setSyncSummary(text, isError = false) {
+  syncSummary.textContent = text;
+  syncSummary.classList.toggle('error', isError);
+}
+
+async function compareSync() {
+  const token = ++syncToken;
+  syncPlanId = null;
+  syncRunBtn.disabled = true;
+  syncPlanList.replaceChildren();
+  setSyncSummary('Comparing…');
+  const { source, target } = syncDirection();
+  try {
+    const plan = await api.syncPlan(source, target, syncDelete.checked);
+    if (token !== syncToken) return; // direction or options changed meanwhile
+    syncPlanId = plan.id;
+    renderSyncPlan(plan);
+    syncRunBtn.disabled = plan.actions.length === 0;
+  } catch (err) {
+    if (token === syncToken) setSyncSummary(cleanError(err), true);
+  }
+}
+
+function syncListItem(cls, badge, rel, meta = '') {
+  const li = document.createElement('li');
+  li.className = cls;
+  for (const [className, text] of [['badge', badge], ['rel', rel], ['meta', meta]]) {
+    const span = document.createElement('span');
+    span.className = className;
+    span.textContent = text;
+    li.append(span);
+  }
+  return li;
+}
+
+function renderSyncPlan({ actions, errors, unchanged }) {
+  const counts = { new: 0, update: 0, replace: 0, delete: 0 };
+  for (const a of actions) counts[a.type]++;
+  const parts = [];
+  if (counts.new) parts.push(`${counts.new} new`);
+  if (counts.update) parts.push(`${counts.update} to update`);
+  if (counts.replace) parts.push(`${counts.replace} to replace`);
+  if (counts.delete) parts.push(`${counts.delete} to trash`);
+  parts.push(`${unchanged} unchanged`);
+  if (errors.length) parts.push(`${errors.length} unreadable`);
+  setSyncSummary(actions.length ? parts.join('  ·  ') : `Already in sync — ${parts.join('  ·  ')}`);
+
+  const frag = document.createDocumentFragment();
+  for (const e of errors) frag.append(syncListItem('error', 'error', e.rel, e.message));
+  for (const a of actions.slice(0, SYNC_LIST_LIMIT)) {
+    const name = a.isDir ? a.rel + sep : a.rel;
+    const meta = [a.isDir ? 'folder' : formatSize(a.size), a.targetNewer ? 'target is newer' : ''].filter(Boolean).join(', ');
+    frag.append(syncListItem(a.type, SYNC_LABELS[a.type], name, meta));
+  }
+  if (actions.length > SYNC_LIST_LIMIT) {
+    const more = document.createElement('li');
+    more.className = 'more';
+    more.textContent = `…and ${actions.length - SYNC_LIST_LIMIT} more`;
+    frag.append(more);
+  }
+  syncPlanList.replaceChildren(frag);
+}
+
+async function runSync() {
+  if (syncPlanId === null || syncRunning) return;
+  syncRunning = true;
+  setSyncInputsDisabled(true);
+  syncRunBtn.disabled = true;
+  syncProgress.hidden = false;
+  syncProgressBar.value = 0;
+  syncCurrent.textContent = '';
+  const unsubscribe = api.onSyncProgress(({ done, total, current }) => {
+    syncProgressBar.max = Math.max(1, total);
+    syncProgressBar.value = done;
+    syncCurrent.textContent = current ? `${done + 1}/${total}  ${current}` : '';
+  });
+
+  let result = null;
+  try {
+    result = await api.syncRun(syncPlanId);
+  } catch (err) {
+    setSyncSummary(cleanError(err), true);
+  } finally {
+    unsubscribe();
+    syncRunning = false;
+    syncPlanId = null;
+  }
+
+  if (result) {
+    const ok = result.done - result.errors.length;
+    const head = result.cancelled ? `Cancelled after ${result.done} of ${result.total} items` : `Synced ${ok} of ${result.total} items`;
+    setSyncSummary(result.errors.length ? `${head} — ${result.errors.length} failed` : head, result.errors.length > 0);
+    syncPlanList.replaceChildren(...result.errors.map((e) => syncListItem('error', 'error', e.rel, e.message)));
+  }
+  syncRunBtn.hidden = true;
+  syncCancelBtn.textContent = 'Close';
+  await Promise.all([panes.left.refresh(), panes.right.refresh()]);
+}
+
+syncRunBtn.addEventListener('click', runSync);
+syncCancelBtn.addEventListener('click', () => {
+  if (syncRunning) {
+    api.syncCancel();
+    syncCancelBtn.textContent = 'Cancelling…';
+  } else {
+    syncToken++; // drop any comparison still in flight
+    syncEl.close();
+  }
+});
+// Escape: cancel a running sync instead of hiding the dialog mid-way
+syncEl.addEventListener('cancel', (e) => {
+  if (syncRunning) {
+    e.preventDefault();
+    syncCancelBtn.click();
+  } else {
+    syncToken++;
+  }
+});
+syncEl.addEventListener('close', () => {
+  if (activePane) activePane.list.focus();
+});
+for (const r of syncRadios) r.addEventListener('change', compareSync);
+syncDelete.addEventListener('change', compareSync);
 
 // ---------- keyboard ----------
 
 const FKEYS = { F2: 'rename', F3: 'open', F4: 'open', F5: 'copy', F6: 'move', F7: 'mkdir', F8: 'trash', Delete: 'trash' };
 
 document.addEventListener('keydown', (e) => {
-  if (dialogEl.open || !activePane) return;
+  if (document.querySelector('dialog[open]') || !activePane) return;
   if (e.target instanceof HTMLInputElement) return;
   const pane = activePane;
   const ctrl = e.ctrlKey || e.metaKey;
+
+  if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+    e.preventDefault();
+    const entry = pane.view[pane.cursor];
+    const pos = cursorMenuPosition(pane);
+    if (!entry || entry.isParent) showFolderMenu(pane, pos);
+    else showItemMenu(pane, entry, pos);
+    return;
+  }
 
   if (FKEYS[e.key] && !ctrl && !e.altKey) {
     e.preventDefault();
@@ -657,6 +1099,8 @@ document.addEventListener('keydown', (e) => {
       m: () => runAction('mirror'),
       a: () => pane.selectAll(),
       r: () => pane.refresh(),
+      d: () => addFavorite(pane),
+      s: () => openSync(),
       l: () => {
         pane.pathInput.focus();
         pane.pathInput.select();
@@ -750,6 +1194,8 @@ window.addEventListener('focus', () => {
   [sep, homeDir] = await Promise.all([api.sep(), api.home()]);
   const state = loadState();
   showHidden = !!state.showHidden;
+  favorites = Array.isArray(state.favorites) ? state.favorites : await api.defaultFavorites();
+  renderFavorites();
 
   panes.left = new Pane('left', document.getElementById('pane-left'));
   panes.right = new Pane('right', document.getElementById('pane-right'));
