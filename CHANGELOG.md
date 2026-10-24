@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The F1 Menu button is now the first button in the bottom bar.
+
 ## [0.5.1] - 2026-10-24
 
 ### Fixed
