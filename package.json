@@ -17,7 +17,12 @@
     "start": "electron .",
     "dist": "electron-builder --linux deb AppImage",
     "dist:deb": "electron-builder --linux deb",
-    "dist:appimage": "electron-builder --linux AppImage"
+    "dist:appimage": "electron-builder --linux AppImage",
+    "release:patch": "npm version patch",
+    "release:minor": "npm version minor",
+    "release:major": "npm version major",
+    "preversion": "node scripts/changelog.js check",
+    "version": "node scripts/changelog.js release && git add CHANGELOG.md"
   },
   "license": "MIT",
   "devDependencies": {
@@ -52,7 +57,10 @@
     "deb": {
       "packageName": "splitbeam",
       "priority": "optional",
-      "fpm": ["--category", "utils"]
+      "fpm": [
+        "--category",
+        "utils"
+      ]
     }
   }
 }

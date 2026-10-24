@@ -20,6 +20,24 @@ npm run dist:appimage   # AppImage only
 Packages are written to `dist/`. Install the .deb with `sudo apt install ./dist/splitbeam-<version>-amd64.deb`;
 the AppImage runs directly after `chmod +x` (it needs `libfuse2`). The app icon source is `build/icon.svg`.
 
+## Versioning and releases
+
+SplitBeam follows [Semantic Versioning](https://semver.org) and records changes in [CHANGELOG.md](CHANGELOG.md).
+The version shows in the window title and with `splitbeam --version`.
+
+1. As you work, add entries under `## [Unreleased]` in CHANGELOG.md (`### Added`, `### Changed`, `### Fixed`, …).
+2. With a clean working tree, run one of:
+
+   ```sh
+   npm run release:patch   # 0.1.0 -> 0.1.1  bug fixes
+   npm run release:minor   # 0.1.0 -> 0.2.0  new features
+   npm run release:major   # 0.1.0 -> 1.0.0  breaking changes
+   ```
+
+   This bumps the version in package.json, moves the Unreleased entries into a dated section,
+   commits as "Release vX.Y.Z" and tags `vX.Y.Z`. It stops if Unreleased is empty.
+3. Push with `git push --follow-tags`, then build the packages with `npm run dist`.
+
 ## Keys
 
 | Key | Action |

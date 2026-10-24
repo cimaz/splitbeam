@@ -3,6 +3,11 @@ const path = require('path');
 const fs = require('fs/promises');
 const os = require('os');
 
+if (process.argv.includes('--version')) {
+  console.log(`${app.getName()} ${app.getVersion()}`);
+  process.exit(0);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -227,6 +232,7 @@ function registerIpc() {
     if (dir === '~' || dir.startsWith('~/')) dir = path.join(os.homedir(), dir.slice(1));
     return listDir(path.resolve(dir));
   });
+  ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('fs:home', () => os.homedir());
   ipcMain.handle('fs:defaultFavorites', async () => {
     const candidates = [

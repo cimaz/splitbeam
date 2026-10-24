@@ -4,6 +4,7 @@ const invoke = (channel) => (...args) => ipcRenderer.invoke(channel, ...args);
 
 contextBridge.exposeInMainWorld('api', {
   list: invoke('fs:list'),
+  version: invoke('app:version'),
   home: invoke('fs:home'),
   defaultFavorites: invoke('fs:defaultFavorites'),
   sep: invoke('fs:sep'),

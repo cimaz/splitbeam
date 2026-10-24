@@ -1191,7 +1191,9 @@ window.addEventListener('focus', () => {
 // ---------- init ----------
 
 (async function init() {
-  [sep, homeDir] = await Promise.all([api.sep(), api.home()]);
+  let version;
+  [sep, homeDir, version] = await Promise.all([api.sep(), api.home(), api.version()]);
+  document.title = `SplitBeam ${version}`;
   const state = loadState();
   showHidden = !!state.showHidden;
   favorites = Array.isArray(state.favorites) ? state.favorites : await api.defaultFavorites();
