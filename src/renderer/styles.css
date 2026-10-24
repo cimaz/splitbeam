@@ -761,3 +761,20 @@ dialog::backdrop {
   background: transparent;
   color: var(--muted);
 }
+
+/* Briefly highlight a favorite (e.g. when adding one that already exists) */
+@keyframes flash {
+  0%,
+  100% {
+    background: transparent;
+  }
+  20%,
+  60% {
+    background: var(--accent);
+    color: #fff;
+  }
+}
+
+.side-list li.flash {
+  animation: flash 1.2s ease-in-out;
+}

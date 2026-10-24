@@ -576,8 +576,21 @@ async function addFavorite(pane, dir = pane && pane.path) {
     pane.setStatus('Network locations live in the Network list, not in favorites');
     return;
   }
-  if (favorites.some((f) => f.path === dir)) {
-    pane.setStatus('This folder is already in favorites');
+  const existing = favorites.findIndex((f) => f.path === dir);
+  if (existing >= 0) {
+    // Point at the existing entry so it is obvious why nothing was added
+    const li = favoritesList.querySelector(`li[data-index="${existing}"]`);
+    if (li) {
+      li.scrollIntoView({ block: 'nearest' });
+      li.classList.remove('flash');
+      void li.offsetWidth; // restart the animation
+      li.classList.add('flash');
+    }
+    await showDialog({
+      message: `"${favorites[existing].name}" is already in your favorites:\n${dir}\n\n` +
+        'The + button adds the folder the active pane is showing. Open the folder you want to add first.',
+      buttons: [{ label: 'OK', value: 'ok', kind: 'primary' }],
+    });
     return;
   }
   const { value, text } = await showDialog({

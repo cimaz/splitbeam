@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Favorites + button seemed to do nothing when the active pane's folder was already a favorite;
+  it now highlights that favorite and explains why nothing was added.
+
 ## [0.5.0] - 2026-10-24
 
 ### Added
