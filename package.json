@@ -62,5 +62,9 @@
         "utils"
       ]
     }
+  },
+  "dependencies": {
+    "ssh2": "^1.17.0",
+    "ssh2-sftp-client": "^12.1.1"
   }
 }

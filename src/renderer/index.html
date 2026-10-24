@@ -13,7 +13,12 @@
           <span>Favorites</span>
           <button class="fav-add" title="Add current folder to favorites (Ctrl+D)">+</button>
         </div>
-        <ul class="favorites"></ul>
+        <ul class="favorites side-list"></ul>
+        <div class="sidebar-head section">
+          <span>Network</span>
+          <button class="net-add" title="Add SFTP server">+</button>
+        </div>
+        <ul class="network side-list"></ul>
       </aside>
       <div class="divider" aria-hidden="true"></div>
       <section class="pane" id="pane-left"></section>
@@ -84,6 +89,38 @@
         <button class="sync-cancel">Cancel</button>
         <button class="sync-run primary">Sync</button>
       </menu>
+    </dialog>
+
+    <dialog id="conn-dialog" class="conn-dialog">
+      <form method="dialog">
+        <h2 class="conn-title">Add SFTP server</h2>
+        <div class="conn-grid">
+          <label class="wide">Name <input name="name" placeholder="Same as host if empty" spellcheck="false" /></label>
+          <label class="host">Host <input name="host" required placeholder="example.com" spellcheck="false" /></label>
+          <label class="port">Port <input name="port" type="number" min="1" max="65535" value="22" required /></label>
+          <label class="wide">Username <input name="username" required spellcheck="false" /></label>
+          <label class="wide">
+            Sign in with
+            <select name="auth">
+              <option value="password">Password (asked when connecting)</option>
+              <option value="key">SSH key file</option>
+              <option value="agent">SSH agent</option>
+            </select>
+          </label>
+          <label class="wide key-row">
+            Private key file
+            <span class="with-button">
+              <input name="keyPath" placeholder="~/.ssh/id_ed25519" spellcheck="false" />
+              <button type="button" class="key-browse">Browse&#8230;</button>
+            </span>
+          </label>
+          <label class="wide">Start in folder <input name="remotePath" placeholder="Home folder if empty" spellcheck="false" /></label>
+        </div>
+        <menu class="dlg-buttons">
+          <button value="save" class="primary">Save</button>
+          <button value="" formnovalidate>Cancel</button>
+        </menu>
+      </form>
     </dialog>
 
     <script src="renderer.js"></script>

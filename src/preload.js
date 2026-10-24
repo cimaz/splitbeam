@@ -20,6 +20,16 @@ contextBridge.exposeInMainWorld('api', {
   reveal: invoke('shell:reveal'),
   copyText: invoke('clipboard:writeText'),
   popupMenu: invoke('menu:popup'),
+  pickFile: invoke('dialog:openFile'),
+  sftpConnect: invoke('sftp:connect'),
+  sftpDisconnect: invoke('sftp:disconnect'),
+  sftpTrustHost: invoke('sftp:trustHost'),
+  sftpConnected: invoke('sftp:connected'),
+  onSftpStatus: (callback) => {
+    const listener = (_e, status) => callback(status);
+    ipcRenderer.on('sftp:status', listener);
+    return () => ipcRenderer.removeListener('sftp:status', listener);
+  },
   syncPlan: invoke('sync:plan'),
   syncRun: invoke('sync:run'),
   syncCancel: invoke('sync:cancel'),

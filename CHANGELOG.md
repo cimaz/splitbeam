@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Network section in the sidebar for SFTP servers: password, SSH key (with passphrase) or SSH agent
+  sign-in; browse, copy, move, rename, create folders and delete on servers, including transfers between
+  servers. Server fingerprints are confirmed on first connection and changes are flagged. Dropped
+  connections reconnect automatically.
+
 ## [0.1.0] - 2026-10-24
 
 ### Added

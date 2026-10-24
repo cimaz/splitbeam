@@ -74,6 +74,16 @@ active pane, use **+** (or Ctrl+D) to add the active pane's current folder, and 
 review the list of changes, then confirm. New and changed files are copied with their timestamps; files that
 exist only in the target are kept unless you tick the option to move them to the trash.
 
+**Network** (below Favorites) holds your SFTP servers. Click **+** to add one: host, port, username, the folder
+to start in, and how to sign in — password (asked when connecting and kept in memory only, never saved), an SSH key
+file (passphrases are asked for too) or your SSH agent. Click a server to open it in the active pane; right-click
+for Open in other pane, Edit, Disconnect and Remove. A green dot marks connected servers.
+
+Remote folders work like local ones: browse, rename, create folders and copy or move with F5/F6 or drag and drop,
+in any direction (local ↔ server, server ↔ server). Opening a remote file downloads a temporary copy. Servers have
+no trash, so deleting on a server is permanent. The first connection shows the server's fingerprint to confirm; if
+it later changes, SplitBeam warns before connecting. Sync is for local folders only.
+
 Drag items onto the other pane to copy them; hold Shift while dropping to move.
 Favorites, pane locations, sorting and the hidden-files setting are remembered between sessions.
 

@@ -11,12 +11,17 @@ const ICON_FILE =
 const ICON_UP =
   '<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>';
 
+const ICON_SERVER =
+  '<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="2.5" width="12" height="4.5" rx="1"/><rect x="2" y="9" width="12" height="4.5" rx="1"/><path d="M4.5 4.75h1M4.5 11.25h1" stroke-width="1.6" stroke-linecap="round"/></svg>';
+
 let sep = '/';
 let homeDir = '/';
 let showHidden = false;
 let activePane = null;
 let dragSource = null;
 let favorites = [];
+let connections = []; // saved SFTP servers (no secrets)
+const onlineKeys = new Set(); // user@host:port of live SFTP sessions
 const panes = {};
 
 // ---------- helpers ----------
@@ -24,6 +29,10 @@ const panes = {};
 function cleanError(err) {
   const msg = String(err && err.message ? err.message : err);
   return msg.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+}
+
+function isRemotePath(p) {
+  return typeof p === 'string' && p.startsWith('sftp://');
 }
 
 function basename(p) {
@@ -69,6 +78,7 @@ function saveState() {
       JSON.stringify({
         showHidden,
         favorites,
+        connections,
         active: activePane && activePane.side,
         left: { path: panes.left.path, sort: panes.left.sort },
         right: { path: panes.right.path, sort: panes.right.sort },
@@ -90,10 +100,11 @@ const dlgButtons = dialogEl.querySelector('.dlg-buttons');
  * Shows a modal dialog. Resolves to { value, text } where value is the clicked
  * button's value ('' when cancelled with Escape) and text is the input content.
  */
-function showDialog({ message, input = null, selectEnd = null, buttons }) {
+function showDialog({ message, input = null, password = false, selectEnd = null, buttons }) {
   return new Promise((resolve) => {
     dlgMessage.textContent = message;
     dlgInput.hidden = input === null;
+    dlgInput.type = password ? 'password' : 'text';
     dlgInput.value = input ?? '';
     dlgButtons.replaceChildren();
     let primary = null;
@@ -109,7 +120,10 @@ function showDialog({ message, input = null, selectEnd = null, buttons }) {
     dialogEl.addEventListener(
       'close',
       () => {
-        resolve({ value: dialogEl.returnValue, text: dlgInput.value.trim() });
+        // Passwords are returned exactly as typed and not left behind in the field
+        const text = password ? dlgInput.value : dlgInput.value.trim();
+        dlgInput.value = '';
+        resolve({ value: dialogEl.returnValue, text });
         if (activePane) activePane.list.focus();
       },
       { once: true }
@@ -275,8 +289,15 @@ class Pane {
     try {
       result = await api.list(dir);
     } catch (err) {
-      this.setStatus(cleanError(err), true);
-      return false;
+      const conn = /^Not connected/.test(cleanError(err)) && connectionForPath(dir);
+      const url = conn && (await connectServer(conn, this));
+      try {
+        if (!url) throw err;
+        result = await api.list(dir);
+      } catch (err2) {
+        this.setStatus(cleanError(err2), true);
+        return false;
+      }
     }
     const changedDir = result.path !== this.path;
     this.path = result.path;
@@ -303,7 +324,7 @@ class Pane {
     this.applyView();
     this.focusName(focus ?? (current && current.name));
     this.render();
-    if (this === activePane) renderFavorites();
+    if (this === activePane) renderSidebar();
     saveState();
     return true;
   }
@@ -463,7 +484,9 @@ class Pane {
     if (entry.isParent) return this.goUp();
     if (entry.isDir) return this.navigate(entry.path);
     try {
+      if (isRemotePath(entry.path)) this.setStatus(`Downloading ${entry.name}\u2026`);
       await api.open(entry.path);
+      if (isRemotePath(entry.path)) this.updateStatus();
     } catch (err) {
       this.setStatus(cleanError(err), true);
     }
@@ -509,7 +532,7 @@ function setActive(pane) {
   activePane = pane;
   pane.el.classList.add('active');
   if (document.activeElement !== pane.pathInput) pane.list.focus();
-  renderFavorites();
+  renderSidebar();
   saveState();
 }
 
@@ -545,6 +568,10 @@ function renderFavorites() {
 /** Adds `dir` (default: the pane's current folder) to favorites after asking for a name. */
 async function addFavorite(pane, dir = pane && pane.path) {
   if (!dir) return;
+  if (isRemotePath(dir)) {
+    pane.setStatus('Network locations live in the Network list, not in favorites');
+    return;
+  }
   if (favorites.some((f) => f.path === dir)) {
     pane.setStatus('This folder is already in favorites');
     return;
@@ -639,6 +666,278 @@ favoritesList.addEventListener('dragend', () => {
 
 document.querySelector('.fav-add').addEventListener('click', () => addFavorite(activePane));
 
+function renderSidebar() {
+  renderFavorites();
+  renderNetwork();
+}
+
+// ---------- network (SFTP) ----------
+
+const networkList = document.querySelector('.network');
+const connDialog = document.getElementById('conn-dialog');
+const connForm = connDialog.querySelector('form');
+const connecting = new Set(); // ids of servers being connected
+
+function formatHost(host) {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+}
+
+/** user@host:port, matching the key the main process uses for sessions and URLs. */
+function connKey(conn) {
+  return `${conn.username}@${formatHost(conn.host)}:${Number(conn.port) || 22}`;
+}
+
+function connectionForPath(url) {
+  const m = /^sftp:\/\/([^/]+)/.exec(url);
+  return m && connections.find((c) => connKey(c) === m[1]);
+}
+
+function isOnPane(conn, pane) {
+  const base = `sftp://${connKey(conn)}`;
+  return !!pane && !!pane.path && (pane.path === base || pane.path.startsWith(base + '/'));
+}
+
+function renderNetwork() {
+  const frag = document.createDocumentFragment();
+  if (!connections.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'No servers yet. Click + to add an SFTP server.';
+    frag.append(li);
+  }
+  connections.forEach((conn, i) => {
+    const li = document.createElement('li');
+    li.dataset.index = i;
+    li.title = `${connKey(conn)}${conn.remotePath ? ' — ' + conn.remotePath : ''}`;
+    li.classList.toggle('online', onlineKeys.has(connKey(conn)));
+    li.classList.toggle('connecting', connecting.has(conn.id));
+    li.classList.toggle('current', isOnPane(conn, activePane));
+
+    const name = document.createElement('span');
+    name.className = 'net-name';
+    name.textContent = conn.name;
+    const dot = document.createElement('span');
+    dot.className = 'status-dot';
+    const remove = document.createElement('button');
+    remove.className = 'net-remove';
+    remove.title = 'Remove server';
+    remove.textContent = '×';
+
+    li.insertAdjacentHTML('afterbegin', ICON_SERVER);
+    li.append(name, dot, remove);
+    frag.append(li);
+  });
+  networkList.replaceChildren(frag);
+}
+
+async function askSecret(conn, kind, retry) {
+  const { value, text } = await showDialog({
+    message: `${retry ? `That ${kind} didn't work. ` : ''}Enter the ${kind} for ${conn.username}@${conn.host}` +
+      (kind === 'password' ? '\n\nIt is kept in memory until SplitBeam quits, never saved to disk.' : ''),
+    input: '',
+    password: true,
+    buttons: [
+      { label: 'Cancel', value: '' },
+      { label: 'Connect', value: 'go', kind: 'primary' },
+    ],
+  });
+  return value ? text : null;
+}
+
+async function confirmHostKey(conn, info) {
+  const { value } = await showDialog({
+    message: info.previous
+      ? `WARNING: the identity of ${info.host} has changed!\n\n` +
+        'This can mean someone is intercepting the connection, or that the server was reinstalled. ' +
+        'Only continue if you know why it changed.\n\n' +
+        `Previously: ${info.previous}\nNow:        ${info.fingerprint}`
+      : `First connection to ${info.host}.\n\nServer fingerprint:\n${info.fingerprint}\n\n` +
+        "If you can, compare it with the server's own fingerprint (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) before trusting it.",
+    buttons: [
+      { label: 'Cancel', value: '' },
+      info.previous
+        ? { label: 'Trust the new key', value: 'go', kind: 'danger' }
+        : { label: 'Trust and connect', value: 'go', kind: 'primary' },
+    ],
+  });
+  return Boolean(value);
+}
+
+/**
+ * Opens (or reuses) the SFTP session for a saved server, asking for passwords, passphrases and
+ * host key confirmation as needed. Resolves with the location to open, or null if it failed.
+ */
+async function connectServer(conn, pane) {
+  const profile = {
+    host: conn.host,
+    port: conn.port,
+    username: conn.username,
+    auth: conn.auth,
+    keyPath: conn.keyPath,
+    remotePath: conn.remotePath,
+  };
+  connecting.add(conn.id);
+  renderNetwork();
+  if (pane) pane.setStatus(`Connecting to ${conn.name}…`);
+  let secret = null;
+  try {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        const { url } = await api.sftpConnect(profile, secret);
+        onlineKeys.add(connKey(conn));
+        return url;
+      } catch (err) {
+        const msg = cleanError(err);
+        if (msg.startsWith('SFTP_HOST_KEY ')) {
+          const info = JSON.parse(msg.slice('SFTP_HOST_KEY '.length));
+          if (!(await confirmHostKey(conn, info))) return null;
+          await api.sftpTrustHost(info.host, info.fingerprint);
+        } else if (msg === 'SFTP_NEED_SECRET' || (msg === 'SFTP_AUTH' && conn.auth === 'password')) {
+          secret = await askSecret(conn, 'password', msg === 'SFTP_AUTH');
+          if (secret === null) return null;
+        } else if (msg === 'SFTP_PASSPHRASE') {
+          secret = await askSecret(conn, 'key passphrase', secret !== null);
+          if (secret === null) return null;
+        } else if (msg === 'SFTP_AUTH') {
+          const offered = conn.auth === 'agent' ? 'the keys in your SSH agent' : 'the SSH key';
+          await alertError(`Couldn't sign in to ${conn.name}: the server did not accept ${offered}.`);
+          return null;
+        } else {
+          await alertError(`Couldn't connect to ${conn.name}:\n\n${msg}`);
+          return null;
+        }
+      }
+    }
+    return null;
+  } finally {
+    connecting.delete(conn.id);
+    renderNetwork();
+    if (pane) pane.updateStatus();
+  }
+}
+
+async function openServer(conn, pane) {
+  const url = await connectServer(conn, pane);
+  if (url) await pane.navigate(url);
+  if (activePane) activePane.list.focus();
+}
+
+async function disconnectServer(conn) {
+  await api.sftpDisconnect(connKey(conn));
+  onlineKeys.delete(connKey(conn));
+  for (const pane of Object.values(panes)) {
+    if (isOnPane(conn, pane)) await pane.navigate(homeDir);
+  }
+  renderNetwork();
+}
+
+async function removeServer(conn) {
+  const { value } = await showDialog({
+    message: `Remove "${conn.name}" from the Network list?`,
+    buttons: [
+      { label: 'Cancel', value: '' },
+      { label: 'Remove', value: 'go', kind: 'danger' },
+    ],
+  });
+  if (!value) return;
+  if (onlineKeys.has(connKey(conn))) await disconnectServer(conn);
+  connections = connections.filter((c) => c !== conn);
+  renderNetwork();
+  saveState();
+}
+
+/** Shows the add/edit form; resolves when it closes. */
+function editServer(conn = null) {
+  const f = connForm.elements;
+  connDialog.querySelector('.conn-title').textContent = conn ? `Edit ${conn.name}` : 'Add SFTP server';
+  f.name.value = conn ? conn.name : '';
+  f.host.value = conn ? conn.host : '';
+  f.port.value = conn ? conn.port : 22;
+  f.username.value = conn ? conn.username : '';
+  f.auth.value = conn ? conn.auth : 'password';
+  f.keyPath.value = conn ? conn.keyPath || '' : '';
+  f.remotePath.value = conn ? conn.remotePath || '' : '';
+  updateKeyRow();
+  connDialog.returnValue = '';
+
+  return new Promise((resolve) => {
+    connDialog.addEventListener(
+      'close',
+      async () => {
+        if (connDialog.returnValue === 'save') {
+          const next = {
+            id: conn ? conn.id : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            name: f.name.value.trim() || f.host.value.trim(),
+            host: f.host.value.trim(),
+            port: Number(f.port.value) || 22,
+            username: f.username.value.trim(),
+            auth: f.auth.value,
+            keyPath: f.auth.value === 'key' ? f.keyPath.value.trim() : '',
+            remotePath: f.remotePath.value.trim(),
+          };
+          if (conn) {
+            // Sign-in details changed: drop the old session so the next open uses them
+            const changed = ['host', 'port', 'username', 'auth', 'keyPath'].some((k) => conn[k] !== next[k]);
+            if (changed && onlineKeys.has(connKey(conn))) await disconnectServer(conn);
+            Object.assign(conn, next);
+          } else {
+            connections.push(next);
+          }
+          renderNetwork();
+          saveState();
+        }
+        if (activePane) activePane.list.focus();
+        resolve();
+      },
+      { once: true }
+    );
+    connDialog.showModal();
+    f[conn ? 'name' : 'host'].focus();
+  });
+}
+
+function updateKeyRow() {
+  connDialog.querySelector('.key-row').hidden = connForm.elements.auth.value !== 'key';
+  connForm.elements.keyPath.required = connForm.elements.auth.value === 'key';
+}
+
+connForm.elements.auth.addEventListener('change', updateKeyRow);
+connDialog.querySelector('.key-browse').addEventListener('click', async () => {
+  const picked = await api.pickFile(connForm.elements.keyPath.value.trim() || '~/.ssh');
+  if (picked) connForm.elements.keyPath.value = picked;
+});
+
+document.querySelector('.net-add').addEventListener('click', () => editServer());
+
+networkList.addEventListener('click', (e) => {
+  const li = e.target.closest('li[data-index]');
+  if (!li) return;
+  const conn = connections[Number(li.dataset.index)];
+  if (e.target.closest('.net-remove')) removeServer(conn);
+  else if (activePane) openServer(conn, activePane);
+});
+
+networkList.addEventListener('contextmenu', async (e) => {
+  e.preventDefault();
+  const li = e.target.closest('li[data-index]');
+  if (!li) return editServer();
+  const conn = connections[Number(li.dataset.index)];
+  const choice = await api.popupMenu([
+    { id: 'open', label: 'Open' },
+    { id: 'openOther', label: 'Open in other pane' },
+    SEPARATOR,
+    { id: 'edit', label: 'Edit…' },
+    { id: 'disconnect', label: 'Disconnect', enabled: onlineKeys.has(connKey(conn)) },
+    SEPARATOR,
+    { id: 'remove', label: 'Remove' },
+  ]);
+  if (choice === 'open') openServer(conn, activePane);
+  else if (choice === 'openOther') openServer(conn, activePane.other);
+  else if (choice === 'edit') editServer(conn);
+  else if (choice === 'disconnect') disconnectServer(conn);
+  else if (choice === 'remove') removeServer(conn);
+});
+
 // ---------- context menus ----------
 
 const SEPARATOR = { type: 'separator' };
@@ -663,23 +962,24 @@ async function showItemMenu(pane, entry, pos) {
   const targets = pane.targets();
   const multi = targets.length > 1;
   const count = multi ? ` ${targets.length} items` : '';
+  const remote = isRemotePath(entry.path);
   const choice = await api.popupMenu(
     [
       { id: 'open', label: entry.isDir ? 'Open' : 'Open with default app', accelerator: 'Enter' },
       entry.isDir && { id: 'openOther', label: 'Open in other pane' },
-      { id: 'reveal', label: 'Show in system file manager' },
+      { id: 'reveal', label: 'Show in system file manager', enabled: !remote },
       SEPARATOR,
       { id: 'copy', label: `Copy${count} to other pane`, accelerator: 'F5' },
       { id: 'move', label: `Move${count} to other pane`, accelerator: 'F6' },
       { id: 'rename', label: 'Rename', accelerator: 'F2', enabled: !multi },
-      { id: 'trash', label: `Move${count} to trash`, accelerator: 'F8' },
+      { id: 'trash', label: remote ? `Delete${count}` : `Move${count} to trash`, accelerator: 'F8' },
       SEPARATOR,
       { id: 'copyPath', label: multi ? 'Copy paths' : 'Copy path' },
       { id: 'copyName', label: multi ? 'Copy names' : 'Copy name' },
       entry.isDir && {
         id: 'favorite',
         label: 'Add to favorites',
-        enabled: !favorites.some((f) => f.path === entry.path),
+        enabled: !remote && !favorites.some((f) => f.path === entry.path),
       },
       SEPARATOR,
       { id: 'mkdir', label: 'New folder', accelerator: 'F7' },
@@ -710,20 +1010,21 @@ async function showItemMenu(pane, entry, pos) {
 }
 
 async function showFolderMenu(pane, pos) {
+  const remote = isRemotePath(pane.path);
   const choice = await api.popupMenu([
     { id: 'mkdir', label: 'New folder', accelerator: 'F7' },
     { id: 'refresh', label: 'Refresh', accelerator: 'CmdOrCtrl+R' },
     { id: 'hidden', label: showHidden ? 'Hide hidden files' : 'Show hidden files', accelerator: 'CmdOrCtrl+H' },
     SEPARATOR,
     { id: 'mirror', label: 'Open this folder in other pane', accelerator: 'CmdOrCtrl+M' },
-    { id: 'openExternal', label: 'Open in system file manager' },
+    { id: 'openExternal', label: 'Open in system file manager', enabled: !remote },
     SEPARATOR,
     { id: 'copyPath', label: 'Copy folder path' },
     {
       id: 'favorite',
       label: 'Add folder to favorites',
       accelerator: 'CmdOrCtrl+D',
-      enabled: !favorites.some((f) => f.path === pane.path),
+      enabled: !remote && !favorites.some((f) => f.path === pane.path),
     },
   ], pos);
 
@@ -831,11 +1132,14 @@ async function rename(pane) {
 async function trash(pane) {
   const paths = pane.targets();
   if (!paths.length) return;
+  const remote = isRemotePath(paths[0]);
   const { value } = await showDialog({
-    message: `Move ${describe(paths)} to the trash?`,
+    message: remote
+      ? `Permanently delete ${describe(paths)}?\n\nNetwork locations have no trash, so this can't be undone.`
+      : `Move ${describe(paths)} to the trash?`,
     buttons: [
       { label: 'Cancel', value: '' },
-      { label: 'Move to trash', value: 'go', kind: 'danger' },
+      { label: remote ? 'Delete' : 'Move to trash', value: 'go', kind: 'danger' },
     ],
   });
   if (!value) return;
@@ -1197,7 +1501,14 @@ window.addEventListener('focus', () => {
   const state = loadState();
   showHidden = !!state.showHidden;
   favorites = Array.isArray(state.favorites) ? state.favorites : await api.defaultFavorites();
-  renderFavorites();
+  connections = Array.isArray(state.connections) ? state.connections : [];
+  for (const key of await api.sftpConnected()) onlineKeys.add(key);
+  api.onSftpStatus(({ key, connected }) => {
+    if (connected) onlineKeys.add(key);
+    else onlineKeys.delete(key);
+    renderNetwork();
+  });
+  renderSidebar();
 
   panes.left = new Pane('left', document.getElementById('pane-left'));
   panes.right = new Pane('right', document.getElementById('pane-right'));
@@ -1207,7 +1518,9 @@ window.addEventListener('focus', () => {
       const pane = panes[side];
       const saved = state[side] || {};
       if (saved.sort) pane.sort = saved.sort;
-      if (!(saved.path && (await pane.load(saved.path)))) await pane.load(homeDir);
+      // Network locations need signing in again, so start those panes at home
+      const start = saved.path && !isRemotePath(saved.path) ? saved.path : null;
+      if (!(start && (await pane.load(start)))) await pane.load(homeDir);
     })
   );
 

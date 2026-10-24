@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, shell, Menu, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const os = require('os');
+const remote = require('./sftp');
 
 if (process.argv.includes('--version')) {
   console.log(`${app.getName()} ${app.getVersion()}`);
@@ -182,6 +183,9 @@ async function runSyncAction(action, source, target) {
 
 function registerSyncIpc() {
   ipcMain.handle('sync:plan', async (_e, source, target, deleteExtra) => {
+    if (remote.isRemote(source) || remote.isRemote(target)) {
+      throw new Error('Sync works between local folders only; network locations are not supported yet');
+    }
     source = path.resolve(source);
     target = path.resolve(target);
     if (isInside(target, source) || isInside(source, target)) {
@@ -226,9 +230,61 @@ function registerSyncIpc() {
   });
 }
 
+// ---------- local / remote dispatch ----------
+
+const nameOf = (p) => (remote.isRemote(p) ? remote.basename(p) : path.basename(p));
+const joinAny = (dir, name) => (remote.isRemote(dir) ? remote.join(dir, name) : path.join(dir, name));
+const existsAny = (p) => (remote.isRemote(p) ? remote.exists(p) : exists(p));
+const removeAny = (p) => (remote.isRemote(p) ? remote.remove(p) : fs.rm(p, { recursive: true, force: true }));
+
+function checkName(name) {
+  if (!name || name.includes('/') || name.includes(path.sep) || name === '.' || name === '..') {
+    throw new Error('Invalid name');
+  }
+}
+
+/** Copies or moves `src` into `destDir`, between any combination of local and SFTP locations. */
+async function transfer(src, destDir, isMove) {
+  const dest = joinAny(destDir, nameOf(src));
+
+  if (!remote.isRemote(src) && !remote.isRemote(dest)) {
+    if (path.resolve(src) === path.resolve(dest)) {
+      if (isMove) return;
+      throw new Error('Source and destination are the same');
+    }
+    if (dest.startsWith(path.resolve(src) + path.sep)) {
+      throw new Error(`Cannot ${isMove ? 'move' : 'copy'} a folder into itself`);
+    }
+    if (!isMove) return fs.cp(src, dest, { recursive: true, force: true, preserveTimestamps: true });
+    if (await exists(dest)) await fs.rm(dest, { recursive: true, force: true });
+    return move(src, dest);
+  }
+
+  if (src === dest) {
+    if (isMove) return;
+    throw new Error('Source and destination are the same');
+  }
+  if (isMove && remote.sameSession(src, dest)) return remote.moveWithin(src, dest);
+
+  if (isMove && (await existsAny(dest))) await removeAny(dest);
+  if (remote.isRemote(src) && remote.isRemote(dest)) await remote.copyRemote(src, dest);
+  else if (remote.isRemote(dest)) await remote.upload(src, dest);
+  else await remote.download(src, dest);
+  if (isMove) await removeAny(src);
+}
+
+function registerSftpIpc() {
+  ipcMain.handle('sftp:connect', (_e, profile, secret) => remote.connect(profile, secret));
+  ipcMain.handle('sftp:disconnect', (_e, key) => remote.disconnect(key));
+  ipcMain.handle('sftp:trustHost', (_e, id, fingerprint) => remote.trustHost(id, fingerprint));
+  ipcMain.handle('sftp:connected', () => remote.connectedKeys());
+}
+
 function registerIpc() {
   registerSyncIpc();
+  registerSftpIpc();
   ipcMain.handle('fs:list', (_e, dir) => {
+    if (remote.isRemote(dir)) return remote.list(dir);
     if (dir === '~' || dir.startsWith('~/')) dir = path.join(os.homedir(), dir.slice(1));
     return listDir(path.resolve(dir));
   });
@@ -245,9 +301,10 @@ function registerIpc() {
     return candidates.filter((_c, i) => present[i]);
   });
   ipcMain.handle('fs:sep', () => path.sep);
-  ipcMain.handle('fs:join', (_e, ...parts) => path.join(...parts));
-  ipcMain.handle('fs:exists', (_e, p) => exists(p));
+  ipcMain.handle('fs:join', (_e, dir, name) => joinAny(dir, name));
+  ipcMain.handle('fs:exists', (_e, p) => existsAny(p));
   ipcMain.handle('fs:isDir', async (_e, p) => {
+    if (remote.isRemote(p)) return remote.isDir(p);
     try {
       return (await fs.stat(p)).isDirectory();
     } catch {
@@ -255,40 +312,42 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('fs:copy', async (_e, src, destDir) => {
-    const dest = path.join(destDir, path.basename(src));
-    if (path.resolve(src) === path.resolve(dest)) throw new Error('Source and destination are the same');
-    if (dest.startsWith(path.resolve(src) + path.sep)) throw new Error('Cannot copy a folder into itself');
-    await fs.cp(src, dest, { recursive: true, force: true, preserveTimestamps: true });
-  });
-
-  ipcMain.handle('fs:move', async (_e, src, destDir) => {
-    const dest = path.join(destDir, path.basename(src));
-    if (path.resolve(src) === path.resolve(dest)) return;
-    if (dest.startsWith(path.resolve(src) + path.sep)) throw new Error('Cannot move a folder into itself');
-    if (await exists(dest)) await fs.rm(dest, { recursive: true, force: true });
-    await move(src, dest);
-  });
+  ipcMain.handle('fs:copy', (_e, src, destDir) => transfer(src, destDir, false));
+  ipcMain.handle('fs:move', (_e, src, destDir) => transfer(src, destDir, true));
 
   ipcMain.handle('fs:rename', async (_e, src, newName) => {
-    if (!newName || newName.includes('/') || newName.includes(path.sep)) throw new Error('Invalid name');
+    checkName(newName);
+    if (remote.isRemote(src)) return remote.rename(src, newName);
     const dest = path.join(path.dirname(src), newName);
     if (await exists(dest)) throw new Error(`"${newName}" already exists`);
     await fs.rename(src, dest);
   });
 
   ipcMain.handle('fs:mkdir', async (_e, dir, name) => {
-    if (!name || name.includes('/') || name.includes(path.sep)) throw new Error('Invalid name');
+    checkName(name);
+    if (remote.isRemote(dir)) return remote.mkdir(dir, name);
     await fs.mkdir(path.join(dir, name));
   });
 
-  ipcMain.handle('fs:trash', (_e, p) => shell.trashItem(p));
+  // Local items go to the trash; remote ones are deleted permanently (servers have no trash)
+  ipcMain.handle('fs:trash', (_e, p) => (remote.isRemote(p) ? remote.remove(p) : shell.trashItem(p)));
 
   ipcMain.handle('shell:open', async (_e, p) => {
-    const err = await shell.openPath(p);
+    const local = remote.isRemote(p) ? await remote.downloadToTemp(p) : p;
+    const err = await shell.openPath(local);
     if (err) throw new Error(err);
   });
-  ipcMain.handle('shell:reveal', (_e, p) => shell.showItemInFolder(p));
+  ipcMain.handle('shell:reveal', (_e, p) => {
+    if (remote.isRemote(p)) throw new Error('Not available for network locations');
+    shell.showItemInFolder(p);
+  });
+  ipcMain.handle('dialog:openFile', async (e, defaultPath) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
+      defaultPath: defaultPath && defaultPath.startsWith('~') ? path.join(os.homedir(), defaultPath.slice(1)) : defaultPath,
+      properties: ['openFile', 'showHiddenFiles'],
+    });
+    return canceled ? null : filePaths[0];
+  });
   ipcMain.handle('clipboard:writeText', (_e, text) => clipboard.writeText(text));
 
   // Shows a native context menu built from [{ id, label, enabled, accelerator } | { type: 'separator' }]
@@ -320,11 +379,18 @@ function registerIpc() {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
+  remote.init(app.getPath('userData'), (key, connected) => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send('sftp:status', { key, connected });
+  });
   registerIpc();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  remote.endAll();
 });
 
 app.on('window-all-closed', () => {
