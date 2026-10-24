@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-24
+
 ### Added
 
 - Menu (F1 or the Menu button) showing the installed version, with Check for updates,
@@ -52,7 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - .deb and AppImage packages.
 - Released under the MIT License.
 
-[Unreleased]: https://github.com/cimaz/splitbeam/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/cimaz/splitbeam/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/cimaz/splitbeam/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cimaz/splitbeam/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/cimaz/splitbeam/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cimaz/splitbeam/releases/tag/v0.1.0
