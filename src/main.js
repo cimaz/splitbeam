@@ -343,10 +343,17 @@ function registerIpc() {
     return listDir(path.resolve(dir));
   });
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    repoUrl: `https://github.com/${GITHUB_REPO}`,
+    license: require('../package.json').license,
+  }));
   ipcMain.handle('update:check', () => checkForUpdate());
   ipcMain.handle('update:open', (_e, url) => {
-    // Only ever open this project's GitHub pages from the update bar
-    if (!url.startsWith(`https://github.com/${GITHUB_REPO}/`)) throw new Error('Refusing to open an unexpected URL');
+    // Only ever open this project's GitHub pages
+    const base = `https://github.com/${GITHUB_REPO}`;
+    if (url !== base && !url.startsWith(base + '/')) throw new Error('Refusing to open an unexpected URL');
     return shell.openExternal(url);
   });
   ipcMain.handle('fs:home', () => os.homedir());

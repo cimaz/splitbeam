@@ -1199,6 +1199,8 @@ function runAction(action) {
       return pane.other.navigate(pane.path);
     case 'sync':
       return openSync();
+    case 'appmenu':
+      return showAppMenu();
   }
 }
 
@@ -1374,7 +1376,7 @@ syncDelete.addEventListener('change', compareSync);
 
 // ---------- keyboard ----------
 
-const FKEYS = { F2: 'rename', F3: 'open', F4: 'open', F5: 'copy', F6: 'move', F7: 'mkdir', F8: 'trash', Delete: 'trash' };
+const FKEYS = { F1: 'appmenu', F2: 'rename', F3: 'open', F4: 'open', F5: 'copy', F6: 'move', F7: 'mkdir', F8: 'trash', Delete: 'trash' };
 
 document.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || !activePane) return;
@@ -1496,13 +1498,25 @@ window.addEventListener('focus', () => {
 
 // ---------- update notification ----------
 
-const UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
 const updateBar = document.querySelector('.update-bar');
 let updateInfo = null;
 
-async function checkForUpdate() {
+/**
+ * Asks GitHub for the latest release and shows the update bar if it is newer. The automatic check at
+ * startup respects "Skip this version"; a manual check always reports back, skipped or not.
+ */
+async function checkForUpdate({ manual = false } = {}) {
   const info = await api.checkForUpdate();
-  if (!info || !info.newer || info.latest === skippedUpdate) return;
+  if (manual && !info) {
+    return alertError("Couldn't check for updates: GitHub could not be reached. Check your internet connection.");
+  }
+  if (manual && !info.newer) {
+    return showDialog({
+      message: `You have the latest version of SplitBeam (${info.current}).`,
+      buttons: [{ label: 'OK', value: 'ok', kind: 'primary' }],
+    });
+  }
+  if (!info || !info.newer || (!manual && info.latest === skippedUpdate)) return;
   updateInfo = info;
   updateBar.querySelector('.update-text').textContent =
     `SplitBeam ${info.latest} is available \u2014 you have ${info.current}.`;
@@ -1523,9 +1537,43 @@ updateBar.querySelector('.update-skip').addEventListener('click', () => {
 });
 updateBar.querySelector('.update-close').addEventListener('click', () => {
   updateBar.hidden = true;
-  clearInterval(updateTimer); // hidden until next start
 });
-let updateTimer = null;
+
+// ---------- app menu ----------
+
+async function showAppMenu() {
+  const info = await api.appInfo();
+  const btn = document.querySelector('.appmenu-button').getBoundingClientRect();
+  const choice = await api.popupMenu(
+    [
+      { id: 'version', label: `SplitBeam ${info.version}`, enabled: false },
+      SEPARATOR,
+      { id: 'update', label: 'Check for updates\u2026' },
+      { id: 'repo', label: 'GitHub repository' },
+      SEPARATOR,
+      { id: 'about', label: 'About SplitBeam' },
+    ],
+    { x: btn.left, y: btn.top }
+  );
+  if (choice === 'update') checkForUpdate({ manual: true });
+  else if (choice === 'repo') openUpdateLink(info.repoUrl);
+  else if (choice === 'about') showAbout(info);
+}
+
+async function showAbout(info) {
+  const { value } = await showDialog({
+    message:
+      `SplitBeam ${info.version}\n` +
+      'A keyboard-friendly dual pane file browser.\n\n' +
+      `Electron ${info.electron}  \u00B7  ${info.license} License\n` +
+      info.repoUrl,
+    buttons: [
+      { label: 'GitHub repository', value: 'repo' },
+      { label: 'Close', value: 'close', kind: 'primary' },
+    ],
+  });
+  if (value === 'repo') openUpdateLink(info.repoUrl);
+}
 
 // ---------- init ----------
 
@@ -1562,6 +1610,6 @@ let updateTimer = null;
 
   setActive(panes[state.active] || panes.left);
 
+  // Automatic check once per start; later checks are manual from the menu (F1)
   setTimeout(checkForUpdate, 3000);
-  updateTimer = setInterval(checkForUpdate, UPDATE_INTERVAL);
 })();

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Menu (F1 or the Menu button) showing the installed version, with Check for updates,
+  GitHub repository and About SplitBeam.
+
+### Changed
+
+- The automatic update check now runs only at startup instead of every 6 hours.
+
 ## [0.3.0] - 2026-10-24
 
 ### Added

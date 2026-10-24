@@ -5,6 +5,7 @@ const invoke = (channel) => (...args) => ipcRenderer.invoke(channel, ...args);
 contextBridge.exposeInMainWorld('api', {
   list: invoke('fs:list'),
   version: invoke('app:version'),
+  appInfo: invoke('app:info'),
   checkForUpdate: invoke('update:check'),
   openUpdateLink: invoke('update:open'),
   home: invoke('fs:home'),
