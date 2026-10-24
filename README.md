@@ -76,3 +76,7 @@ exist only in the target are kept unless you tick the option to move them to the
 
 Drag items onto the other pane to copy them; hold Shift while dropping to move.
 Favorites, pane locations, sorting and the hidden-files setting are remembered between sessions.
+
+## License
+
+[MIT](LICENSE) © 2026 cimaz

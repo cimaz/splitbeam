@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recursive one-way folder Sync (Ctrl+S) in either direction, with a preview of changes,
   optional trashing of target-only items, progress and cancel.
 - .deb and AppImage packages.
+- Released under the MIT License.
 
 [Unreleased]: https://github.com/cimaz/splitbeam/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/cimaz/splitbeam/releases/tag/v0.1.0
