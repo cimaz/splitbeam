@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- macOS builds: the release now includes a .dmg for Intel and Apple Silicon (unsigned; open it with
+  right-click > Open the first time). `npm run dist:mac` builds it locally on a Mac.
+
 ## [0.6.0] - 2026-10-26
 
 ### Added

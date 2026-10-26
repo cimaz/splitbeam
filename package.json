@@ -19,6 +19,7 @@
     "dist:deb": "electron-builder --linux deb",
     "dist:appimage": "electron-builder --linux AppImage",
     "dist:win": "electron-builder --win nsis portable --x64",
+    "dist:mac": "electron-builder --mac dmg --x64 --arm64",
     "release:patch": "npm version patch",
     "release:minor": "npm version minor",
     "release:major": "npm version major",
@@ -69,6 +70,13 @@
         "nsis",
         "portable"
       ]
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.utilities",
+      "target": "dmg",
+      "identity": null,
+      "artifactName": "${name}-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

@@ -1,4 +1,4 @@
-# Builds SplitBeam for Linux and Windows when a version tag (v1.2.3) is pushed, then publishes a GitHub
+# Builds SplitBeam for Linux, Windows and macOS when a version tag (v1.2.3) is pushed, then publishes a GitHub
 # release with the changelog notes and the packages attached. Can also be run by hand for an existing tag.
 name: Release
 
@@ -34,6 +34,10 @@ jobs:
             os: windows-latest
             build: npx electron-builder --win nsis portable --x64 --publish never
             files: dist/*.exe
+          - name: macOS
+            os: macos-latest
+            build: npx electron-builder --mac dmg --x64 --arm64 --publish never
+            files: dist/*.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
