@@ -32,6 +32,9 @@ function cleanError(err) {
   return msg.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 }
 
+// Same list as src/archive.js: files "Extract here" can unpack
+const ARCHIVE_RE = /\.(zip|7z|rar|tar|tgz|tbz2?|txz|tzst|gz|bz2|xz|zst)$/i;
+
 function isRemotePath(p) {
   return typeof p === 'string' && p.startsWith('sftp://');
 }
@@ -980,9 +983,16 @@ async function showItemMenu(pane, entry, pos) {
   const multi = targets.length > 1;
   const count = multi ? ` ${targets.length} items` : '';
   const remote = isRemotePath(entry.path);
+  const archives = targets.filter((p) => ARCHIVE_RE.test(basename(p)));
+  const isArchive = !entry.isDir && ARCHIVE_RE.test(entry.name);
   const choice = await api.popupMenu(
     [
       { id: 'open', label: entry.isDir ? 'Open' : 'Open with default app', accelerator: 'Enter' },
+      isArchive && {
+        id: 'extract',
+        label: archives.length > 1 ? `Extract ${archives.length} archives here` : 'Extract here',
+        enabled: !remote,
+      },
       entry.isDir && { id: 'openOther', label: 'Open in other pane' },
       { id: 'reveal', label: 'Show in system file manager', enabled: !remote },
       SEPARATOR,
@@ -1000,6 +1010,7 @@ async function showItemMenu(pane, entry, pos) {
       },
       SEPARATOR,
       { id: 'mkdir', label: 'New folder', accelerator: 'F7' },
+      { id: 'mkfile', label: 'New file', accelerator: 'Shift+F4' },
     ].filter(Boolean),
     pos
   );
@@ -1007,6 +1018,8 @@ async function showItemMenu(pane, entry, pos) {
   switch (choice) {
     case 'open':
       return pane.openEntry(entry);
+    case 'extract':
+      return extractHere(pane, archives.length ? archives : [entry.path]);
     case 'openOther':
       return pane.other.navigate(entry.path);
     case 'reveal':
@@ -1022,6 +1035,7 @@ async function showItemMenu(pane, entry, pos) {
     case 'rename':
     case 'trash':
     case 'mkdir':
+    case 'mkfile':
       return runAction(choice);
   }
 }
@@ -1030,11 +1044,13 @@ async function showFolderMenu(pane, pos) {
   const remote = isRemotePath(pane.path);
   const choice = await api.popupMenu([
     { id: 'mkdir', label: 'New folder', accelerator: 'F7' },
+    { id: 'mkfile', label: 'New file', accelerator: 'Shift+F4' },
     { id: 'refresh', label: 'Refresh', accelerator: 'CmdOrCtrl+R' },
     { id: 'hidden', label: showHidden ? 'Hide hidden files' : 'Show hidden files', accelerator: 'CmdOrCtrl+H' },
     SEPARATOR,
     { id: 'mirror', label: 'Open this folder in other pane', accelerator: 'CmdOrCtrl+M' },
     { id: 'openExternal', label: 'Open in system file manager', enabled: !remote },
+    { id: 'terminal', label: 'Open terminal', enabled: !remote },
     SEPARATOR,
     { id: 'copyPath', label: 'Copy folder path' },
     {
@@ -1050,11 +1066,14 @@ async function showFolderMenu(pane, pos) {
       return pane.refresh();
     case 'openExternal':
       return api.open(pane.path).catch((err) => pane.setStatus(cleanError(err), true));
+    case 'terminal':
+      return api.openTerminal(pane.path).catch((err) => alertError(`Couldn't open a terminal:\n\n${cleanError(err)}`));
     case 'copyPath':
       return copyText(pane, pane.path, 'folder path');
     case 'favorite':
       return addFavorite(pane);
     case 'mkdir':
+    case 'mkfile':
     case 'hidden':
     case 'mirror':
       return runAction(choice);
@@ -1115,6 +1134,43 @@ async function makeDir(pane) {
   if (!value || !text) return;
   try {
     await api.mkdir(pane.path, text);
+    await pane.load(pane.path, { focus: text });
+    if (pane.other.path === pane.path) pane.other.refresh();
+  } catch (err) {
+    alertError(cleanError(err));
+  }
+}
+
+async function extractHere(pane, paths) {
+  const errors = [];
+  let created = null;
+  for (const p of paths) {
+    pane.setStatus(`Extracting ${basename(p)}\u2026`);
+    try {
+      created = await api.extractHere(p);
+    } catch (err) {
+      errors.push(`${basename(p)}: ${cleanError(err)}`);
+    }
+  }
+  pane.selected.clear();
+  await pane.load(pane.path, { focus: created });
+  if (pane.other.path === pane.path) pane.other.refresh();
+  if (errors.length) alertError(`Some archives could not be extracted:\n\n${errors.join('\n\n')}`);
+}
+
+async function makeFile(pane) {
+  const { value, text } = await showDialog({
+    message: `Create a new file in\n${pane.path}`,
+    input: 'New file.txt',
+    selectEnd: 'New file'.length,
+    buttons: [
+      { label: 'Cancel', value: '' },
+      { label: 'Create', value: 'go', kind: 'primary' },
+    ],
+  });
+  if (!value || !text) return;
+  try {
+    await api.createFile(pane.path, text);
     await pane.load(pane.path, { focus: text });
     if (pane.other.path === pane.path) pane.other.refresh();
   } catch (err) {
@@ -1204,6 +1260,8 @@ function runAction(action) {
       return transfer('move', pane, pane.targets(), pane.other.path);
     case 'mkdir':
       return makeDir(pane);
+    case 'mkfile':
+      return makeFile(pane);
     case 'trash':
       return trash(pane);
     case 'hidden':
@@ -1405,6 +1463,12 @@ document.addEventListener('keydown', (e) => {
     const pos = cursorMenuPosition(pane);
     if (!entry || entry.isParent) showFolderMenu(pane, pos);
     else showItemMenu(pane, entry, pos);
+    return;
+  }
+
+  if (e.key === 'F4' && e.shiftKey && !ctrl && !e.altKey) {
+    e.preventDefault();
+    runAction('mkfile');
     return;
   }
 

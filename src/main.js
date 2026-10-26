@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, dialog, net } = req
 const path = require('path');
 const fs = require('fs/promises');
 const os = require('os');
+const childProcess = require('child_process');
 const remote = require('./sftp');
+const archive = require('./archive');
 
 if (process.argv.includes('--version')) {
   console.log(`${app.getName()} ${app.getVersion()}`);
@@ -273,6 +275,65 @@ async function transfer(src, destDir, isMove) {
   if (isMove) await removeAny(src);
 }
 
+// ---------- terminal ----------
+
+/** Starts `cmd` detached; resolves true once it is running, false if it could not be started. */
+function trySpawn(cmd, args, options) {
+  return new Promise((resolve) => {
+    const child = childProcess.spawn(cmd, args, { detached: true, stdio: 'ignore', ...options });
+    child.once('error', () => resolve(false));
+    child.once('spawn', () => {
+      child.unref();
+      resolve(true);
+    });
+  });
+}
+
+/** Environment for the terminal without the AppImage's own variables, which would leak into the shell. */
+function terminalEnv() {
+  const env = { ...process.env };
+  if (env.APPDIR) {
+    for (const key of ['LD_LIBRARY_PATH', 'PATH', 'XDG_DATA_DIRS']) {
+      if (env[key]) env[key] = env[key].split(':').filter((p) => !p.startsWith(env.APPDIR)).join(':');
+    }
+    for (const key of ['APPDIR', 'APPIMAGE', 'ARGV0', 'OWD']) delete env[key];
+  }
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
+}
+
+async function openTerminal(dir) {
+  if (!(await fs.stat(dir)).isDirectory()) throw new Error('Not a folder');
+  const options = { cwd: dir, env: terminalEnv() };
+  let candidates;
+  if (process.platform === 'win32') {
+    candidates = [
+      ['wt.exe', ['-d', dir]],
+      ['cmd.exe', ['/c', 'start', 'cmd.exe']],
+    ];
+  } else if (process.platform === 'darwin') {
+    candidates = [['open', ['-a', 'Terminal', dir]]];
+  } else {
+    // The user's choice first, then the system default, then common terminals (all start in `cwd`)
+    candidates = [
+      process.env.TERMINAL && [process.env.TERMINAL, []],
+      ['x-terminal-emulator', []],
+      ['gnome-terminal', [`--working-directory=${dir}`]],
+      ['konsole', ['--workdir', dir]],
+      ['xfce4-terminal', [`--working-directory=${dir}`]],
+      ['mate-terminal', [`--working-directory=${dir}`]],
+      ['tilix', [`--working-directory=${dir}`]],
+      ['kitty', ['--directory', dir]],
+      ['alacritty', ['--working-directory', dir]],
+      ['xterm', []],
+    ].filter(Boolean);
+  }
+  for (const [cmd, args] of candidates) {
+    if (await trySpawn(cmd, args, options)) return cmd;
+  }
+  throw new Error('No terminal application was found. Set the TERMINAL environment variable to your terminal.');
+}
+
 // ---------- update check ----------
 
 // "owner/repo" from the homepage in package.json, e.g. https://github.com/cimaz/splitbeam
@@ -409,6 +470,17 @@ function registerIpc() {
     await fs.mkdir(path.join(dir, name));
   });
 
+  ipcMain.handle('fs:createFile', async (_e, dir, name) => {
+    checkName(name);
+    if (remote.isRemote(dir)) return remote.createFile(dir, name);
+    try {
+      await fs.writeFile(path.join(dir, name), '', { flag: 'wx' }); // wx: never overwrite
+    } catch (err) {
+      if (err.code === 'EEXIST') throw new Error(`"${name}" already exists`);
+      throw err;
+    }
+  });
+
   // Local items go to the trash; remote ones are deleted permanently (servers have no trash)
   ipcMain.handle('fs:trash', (_e, p) => (remote.isRemote(p) ? remote.remove(p) : shell.trashItem(p)));
 
@@ -416,6 +488,14 @@ function registerIpc() {
     const local = remote.isRemote(p) ? await remote.downloadToTemp(p) : p;
     const err = await shell.openPath(local);
     if (err) throw new Error(err);
+  });
+  ipcMain.handle('archive:extractHere', (_e, file) => {
+    if (remote.isRemote(file)) throw new Error('Not available for network locations');
+    return archive.extractHere(file);
+  });
+  ipcMain.handle('shell:terminal', (_e, dir) => {
+    if (remote.isRemote(dir)) throw new Error('Not available for network locations');
+    return openTerminal(dir);
   });
   ipcMain.handle('shell:reveal', (_e, p) => {
     if (remote.isRemote(p)) throw new Error('Not available for network locations');

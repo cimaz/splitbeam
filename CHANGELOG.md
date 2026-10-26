@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- "Open terminal" in the right-click menu of a folder's background opens a terminal in that folder
+  ($TERMINAL, the system default terminal or a common one on Linux; Windows Terminal or Command Prompt
+  on Windows).
+- "New file" (Shift+F4) in the right-click menus creates an empty file, locally or on an SFTP server;
+  it never overwrites an existing file.
+- "Extract here" in the right-click menu of archives (zip, tar.gz/bz2/xz/zst, 7z, rar, single .gz/.bz2/
+  .xz/.zst files), also for several selected archives. A single top-level item is placed next to the
+  archive; several go into a folder named after it. Nothing existing is overwritten ("name (2)" instead).
+  Uses the system's tar, unzip or 7z.
+
 ## [0.5.2] - 2026-10-24
 
 ### Changed

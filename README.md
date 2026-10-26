@@ -64,6 +64,7 @@ The version shows in the window title and with `splitbeam --version`.
 | F5 | Copy to other pane |
 | F6 | Move to other pane |
 | F7 | New folder |
+| Shift+F4 | New (empty) file |
 | F8 / Delete | Move to trash |
 | Ctrl+H | Toggle hidden files |
 | Ctrl+U | Swap panes |
@@ -75,7 +76,7 @@ The version shows in the window title and with `splitbeam --version`.
 | Ctrl+Home | Home folder |
 | Ctrl+D | Add current folder to favorites |
 | Type letters | Jump to matching name |
-| Right-click, Menu key, Shift+F10 | Context menu for the item or folder |
+| Right-click, Menu key, Shift+F10 | Context menu for the item or folder (Extract here on archives, Open terminal on the folder) |
 
 The **Favorites** sidebar starts with Home, Desktop, Documents and Downloads. Click one to open it in the
 active pane, use **+** (or Ctrl+D) to add the active pane's current folder, and hover a favorite to remove it with **×**. Drag favorites up or down to reorder them.

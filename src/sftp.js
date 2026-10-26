@@ -299,6 +299,14 @@ async function mkdir(url, name) {
   await client.mkdir(posix.join(remotePath, name));
 }
 
+/** Creates an empty file; refuses to overwrite an existing one. */
+async function createFile(url, name) {
+  const { remotePath, client } = await at(url);
+  const target = posix.join(remotePath, name);
+  if (await client.exists(target)) throw new Error(`"${name}" already exists`);
+  await client.put(Buffer.alloc(0), target);
+}
+
 /** Permanently deletes a file or folder (servers have no trash). */
 async function remove(url) {
   const { remotePath, client } = await at(url);
@@ -378,6 +386,7 @@ module.exports = {
   isDir,
   rename,
   mkdir,
+  createFile,
   remove,
   moveWithin,
   download,
